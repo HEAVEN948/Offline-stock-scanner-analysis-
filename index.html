@@ -26,6 +26,7 @@
   .panel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
   .panel-title{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
   .panel-title::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  .panel-title.no-dot::before{content:none;}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
   input[type=text],input[type=number],select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:#fff;font-family:'JetBrains Mono',monospace;font-size:13px;outline:none;}
   input[type=text]:focus,select:focus{border-color:var(--accent);}
@@ -122,6 +123,22 @@
 
   .install-banner{display:none;align-items:center;justify-content:space-between;gap:10px;background:linear-gradient(135deg,rgba(0,230,118,0.12),rgba(0,184,212,0.12));border:1px solid rgba(0,230,118,0.35);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:12px;}
   .install-banner button{flex-shrink:0;}
+
+  .psych-badge{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:11px;font-family:'JetBrains Mono',monospace;cursor:pointer;transition:.15s;white-space:nowrap;}
+  .psych-badge:hover{filter:brightness(1.2);}
+  .psych-badge .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+  .psych-breakdown{display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px;}
+  .psych-breakdown.open{display:block;}
+  .psych-meter{position:relative;height:8px;border-radius:5px;background:linear-gradient(90deg,#ff3d57,#ff8a00,#ffca28,#8bd450,#00e676);margin:10px 0 4px;}
+  .psych-marker{position:absolute;top:-4px;width:3px;height:16px;background:#fff;border-radius:2px;box-shadow:0 0 6px rgba(255,255,255,.8);}
+  .psych-scale{display:flex;justify-content:space-between;font-size:9px;color:var(--text2);font-family:'JetBrains Mono',monospace;}
+  .psych-line{font-size:12px;color:var(--text);margin:10px 0;line-height:1.5;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--accent);}
+  .psych-sub{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(26,48,72,0.5);font-size:12px;gap:8px;}
+  .psych-sub-name{color:var(--text2);flex-shrink:0;}
+  .psych-sub-bar-track{flex:1;height:5px;border-radius:3px;background:var(--border);margin:0 10px;overflow:hidden;max-width:120px;}
+  .psych-sub-bar-fill{height:100%;border-radius:3px;}
+  .psych-sub-val{font-family:'JetBrains Mono',monospace;font-weight:700;min-width:32px;text-align:right;flex-shrink:0;}
+  .psych-caveat{font-size:10px;color:var(--text2);margin-top:10px;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -237,8 +254,19 @@
     </div>
 
     <div class="panel">
-      <div class="panel-title">Weighted Signal Score</div>
+      <div class="panel-title no-dot" style="justify-content:space-between">
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0"></span>Weighted Signal Score</span>
+        <span class="psych-badge" id="psychBadge" onclick="togglePsychBreakdown()" title="Tap for market psychology breakdown">🧠 —</span>
+      </div>
       <div id="scoreBox"></div>
+      <div class="psych-breakdown" id="psychBreakdown">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:4px">Market Psychology Score</div>
+        <div class="psych-line" id="psychLine">—</div>
+        <div class="psych-scale"><span>Extreme Fear</span><span>Neutral</span><span>Extreme Greed</span></div>
+        <div class="psych-meter"><div class="psych-marker" id="psychMarker" style="left:50%"></div></div>
+        <div id="psychSubs" style="margin-top:12px"></div>
+        <div class="psych-caveat">⚠️ Reads current crowd conviction from price/volume/candle behavior. This is a confidence filter for your existing signals, not a standalone buy/sell trigger or a market predictor.</div>
+      </div>
     </div>
 
     <div class="panel">
@@ -1189,6 +1217,140 @@ function detectCISD(sym){
   };
 }
 
+// ===================== MARKET PSYCHOLOGY SCORE =====================
+// Composite Fear/Greed-style score (0-100) built from five sub-signals that
+// read crowd conviction from data the app already computes (volume, wicks,
+// RSI/MACD, gaps, S/R touches). This is a confidence/filter layer for the
+// existing signal engine below — NOT a standalone predictive trigger.
+function computePsychologyScore(sym){
+  const d = getComputed(sym);
+  const { candles, rsi, macd, volMA, ema50, periods } = d;
+  const n = candles.length;
+  if (n < 10) return null;
+
+  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+  // 1) Volume-Price Divergence (25%) — price move confirmed or contradicted by volume trend
+  const winDiv = Math.max(4, Math.min(20, n-1));
+  const divStart = n - winDiv;
+  const priceChgPct = ((candles[n-1].close - candles[divStart].close) / candles[divStart].close) * 100;
+  const half = Math.max(1, Math.floor(winDiv/2));
+  const firstHalfVol = candles.slice(divStart, divStart+half).reduce((a,c)=>a+c.volume,0) / half;
+  const secondHalfVol = candles.slice(divStart+half, n).reduce((a,c)=>a+c.volume,0) / Math.max(1, winDiv-half);
+  const volTrendRatio = firstHalfVol>0 ? secondHalfVol/firstHalfVol : 1;
+  let divergenceScore = 50 + clamp(priceChgPct*6, -45, 45);
+  const volConfirms = volTrendRatio >= 1;
+  if (!volConfirms) divergenceScore = 50 + (divergenceScore-50)*0.45;
+  divergenceScore = clamp(divergenceScore, 0, 100);
+
+  // 2) Candle Psychology (20%) — wick-to-body bias over recent candles
+  const wickWin = Math.min(15, n);
+  const wickCandles = candles.slice(n-wickWin);
+  let upperSum=0, lowerSum=0, rangeSum=0;
+  wickCandles.forEach(c=>{
+    const range = (c.high-c.low) || 0.0001;
+    upperSum += c.high - Math.max(c.open,c.close);
+    lowerSum += Math.min(c.open,c.close) - c.low;
+    rangeSum += range;
+  });
+  const netWickBias = (lowerSum-upperSum)/rangeSum;
+  const candleScore = clamp(50 + netWickBias*120, 0, 100);
+
+  // 3) Momentum Exhaustion (20%) — RSI level, dampened if MACD histogram is decelerating
+  let momentumScore = rsi[n-1] != null ? rsi[n-1] : 50;
+  const histNow = macd.hist[n-1], histBack = macd.hist[n-4];
+  if (histNow!=null && histBack!=null && Math.abs(histBack)>0){
+    const decelerating = Math.abs(histNow) < Math.abs(histBack)*0.7;
+    if (decelerating) momentumScore = 50 + (momentumScore-50)*0.55;
+  }
+  momentumScore = clamp(momentumScore, 0, 100);
+
+  // 4) Gap Behavior (15%) — recent gaps weighted by recency, adjusted for volume follow-through
+  const gapWin = Math.min(5, n-1);
+  const avgVol = volMA[n-1] || candles.slice(-20).reduce((a,c)=>a+c.volume,0)/Math.min(20,n);
+  let gapSum=0, gapWeight=0;
+  for (let i=n-gapWin; i<n; i++){
+    if (i<=0) continue;
+    const prevClose = candles[i-1].close;
+    const gapPct = ((candles[i].open - prevClose)/prevClose)*100;
+    const volRatio = avgVol>0 ? candles[i].volume/avgVol : 1;
+    const weight = 1 + (i-(n-gapWin));
+    let g = 50 + clamp(gapPct*15, -40, 40);
+    if (gapPct<0 && volRatio>1.2) g = clamp(g-15, 0, 100);
+    if (gapPct>0 && volRatio<0.8) g = 50 + (g-50)*0.5;
+    gapSum += g*weight; gapWeight += weight;
+  }
+  const gapScore = clamp(gapWeight>0 ? gapSum/gapWeight : 50, 0, 100);
+
+  // 5) Trend Fragility (20%) — repeated tests of the nearest S/R zone = indecision, pulls toward neutral
+  const sr = detectSupportResistance(sym);
+  const price = candles[n-1].close;
+  const nearZone = [...sr.support, ...sr.resistance].sort((a,b)=>Math.abs(a.distancePct)-Math.abs(b.distancePct))[0];
+  const e50 = ema50[n-1];
+  const dirSign = (e50!=null && price>=e50) ? 1 : -1;
+  const touches = (nearZone && Math.abs(nearZone.distancePct)<3) ? nearZone.touches : 1;
+  const touchPenalty = clamp((touches-1)*10, 0, 40);
+  const fragilityScore = clamp(50 + dirSign*(45-touchPenalty), 0, 100);
+
+  const weights = { divergence:0.25, candle:0.20, momentum:0.20, gap:0.15, fragility:0.20 };
+  const composite = clamp(
+    divergenceScore*weights.divergence +
+    candleScore*weights.candle +
+    momentumScore*weights.momentum +
+    gapScore*weights.gap +
+    fragilityScore*weights.fragility, 0, 100);
+
+  const subs = [
+    { name:'Volume-Price Divergence', score:Math.round(divergenceScore), weight:25 },
+    { name:'Candle Psychology', score:Math.round(candleScore), weight:20 },
+    { name:'Momentum Exhaustion', score:Math.round(momentumScore), weight:20 },
+    { name:'Gap Behavior', score:Math.round(gapScore), weight:15 },
+    { name:'Trend Fragility', score:Math.round(fragilityScore), weight:20 }
+  ];
+
+  let zone, zoneColor;
+  if (composite>=80){ zone='Extreme Greed'; zoneColor='#00e676'; }
+  else if (composite>=60){ zone='Greed'; zoneColor='#8bd450'; }
+  else if (composite>=40){ zone='Neutral'; zoneColor='#ffca28'; }
+  else if (composite>=20){ zone='Fear'; zoneColor='#ff8a00'; }
+  else { zone='Extreme Fear'; zoneColor='#ff3d57'; }
+
+  const driver = subs.reduce((a,b)=> Math.abs(b.score-50)>Math.abs(a.score-50) ? b : a);
+  let line;
+  if (composite>=60) line = `${driver.name} is driving elevated ${zone.toLowerCase()}${volConfirms?' with volume backing it up':' — but conviction looks thin, watch for a fade'}.`;
+  else if (composite<=40) line = `${driver.name} is driving ${zone.toLowerCase()} — crowd showing hesitation or capitulation signs.`;
+  else line = `Signals are mixed right now — no dominant fear or greed bias, ${driver.name.toLowerCase()} is closest to tilting.`;
+
+  return { composite: Math.round(composite), zone, zoneColor, subs, line };
+}
+
+function renderPsychology(sym){
+  const badge = document.getElementById('psychBadge');
+  const p = sym ? computePsychologyScore(sym) : null;
+  if (!p){
+    badge.innerHTML = '🧠 Psychology: n/a';
+    badge.style.borderColor = 'var(--border)';
+    document.getElementById('psychBreakdown').classList.remove('open');
+    return;
+  }
+  badge.innerHTML = `<span class="dot" style="background:${p.zoneColor}"></span>${p.composite} · ${p.zone}`;
+  badge.style.borderColor = p.zoneColor;
+  document.getElementById('psychLine').textContent = p.line;
+  document.getElementById('psychMarker').style.left = `calc(${p.composite}% - 1.5px)`;
+  document.getElementById('psychSubs').innerHTML = p.subs.map(s=>{
+    const color = s.score>=60 ? '#00e676' : s.score>=40 ? '#ffca28' : '#ff3d57';
+    return `<div class="psych-sub">
+      <span class="psych-sub-name">${s.name} <span style="opacity:.55">(${s.weight}%)</span></span>
+      <div class="psych-sub-bar-track"><div class="psych-sub-bar-fill" style="width:${s.score}%;background:${color}"></div></div>
+      <span class="psych-sub-val" style="color:${color}">${s.score}</span>
+    </div>`;
+  }).join('');
+}
+
+function togglePsychBreakdown(){
+  document.getElementById('psychBreakdown').classList.toggle('open');
+}
+
 // ===================== WEIGHTED SIGNAL ENGINE =====================
 function computeSignalScore(sym){
   const d = getComputed(sym);
@@ -1974,6 +2136,7 @@ function draw(){
   renderSR(activeSymbol);
   renderSMC(activeSymbol);
   renderScore(activeSymbol);
+  renderPsychology(activeSymbol);
   renderAnalysis(activeSymbol);
   renderTable(activeSymbol);
 }
