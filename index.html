@@ -1,0 +1,1984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Offline Stock Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+  :root{
+    --bg:#050a0f;--bg2:#0a1520;--bg3:#0f1e2e;--border:#1a3048;
+    --accent:#00e5ff;--accent2:#7b2fff;--green:#00e676;--red:#ff3d57;
+    --yellow:#ffca28;--orange:#ff8a00;--text:#c8dae8;--text2:#6a8fa8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{overscroll-behavior-y:none;}
+  body{background:var(--bg);color:var(--text);font-family:'Space Grotesk',sans-serif;min-height:100vh;touch-action:manipulation;}
+  .wrap{max-width:1100px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(60px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));}
+  button,.chip,.tab,.tgl{user-select:none;-webkit-user-select:none;}
+  header{text-align:center;margin-bottom:20px;}
+  .brand-row{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .brand-name{font-size:13px;font-weight:700;color:#fff;letter-spacing:2px;text-align:left;}
+  .brand-sub{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text2);letter-spacing:2px;}
+  h1{font-size:clamp(22px,5vw,34px);font-weight:700;background:linear-gradient(135deg,#fff,var(--accent) 60%,var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px;}
+  .tagline{color:var(--text2);font-size:13px;}
+  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .panel-title{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+  .panel-title::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  input[type=text],input[type=number],select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:#fff;font-family:'JetBrains Mono',monospace;font-size:13px;outline:none;}
+  input[type=text]:focus,select:focus{border-color:var(--accent);}
+  .btn{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;padding:10px 18px;color:#000;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;}
+  .btn.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border);}
+  .btn.install{background:linear-gradient(135deg,#00e676,#00b8d4);color:#000;display:inline-flex;align-items:center;gap:6px;padding:8px 14px;font-size:12px;border-radius:20px;box-shadow:0 2px 10px rgba(0,230,118,0.25);}
+  .btn.install.installed{background:var(--bg3);color:var(--text2);box-shadow:none;cursor:default;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .file-drop{border:1px dashed var(--border);border-radius:10px;padding:16px;text-align:center;color:var(--text2);font-size:12px;cursor:pointer;transition:.2s;}
+  .file-drop:hover{border-color:var(--accent);color:var(--accent);}
+  .chip{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:12px;font-family:'JetBrains Mono',monospace;cursor:pointer;color:var(--text2);transition:.15s;}
+  .chip.active{background:rgba(0,229,255,0.12);border-color:var(--accent);color:var(--accent);}
+  .toggle-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .tgl{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);font-family:'JetBrains Mono',monospace;cursor:pointer;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;}
+  .tgl input{accent-color:var(--accent);}
+  .tgl.on{color:#fff;border-color:var(--accent);}
+  canvas{width:100%;display:block;}
+  .price-line{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
+  .price-val{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;color:#fff;}
+  .price-chg{font-size:13px;font-family:'JetBrains Mono',monospace;}
+  .pos{color:var(--green);}.neg{color:var(--red);}
+  .tabs{display:flex;gap:6px;margin-bottom:10px;}
+  .tab{padding:6px 14px;border-radius:8px;font-size:11px;font-family:'JetBrains Mono',monospace;background:var(--bg3);color:var(--text2);cursor:pointer;border:1px solid var(--border);}
+  .tab.active{background:rgba(0,229,255,0.12);border-color:var(--accent);color:var(--accent);}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
+  .stat-card{background:var(--bg3);border-radius:10px;padding:12px 14px;}
+  .stat-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:4px;}
+  .stat-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;color:#fff;}
+  .analysis-line{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .analysis-label{color:var(--text2);}
+  .analysis-val{font-weight:600;}
+  .signal-box{border-radius:12px;padding:16px;margin-top:12px;border:1px solid;display:flex;gap:14px;align-items:center;}
+  .signal-box.buy{background:rgba(0,230,118,0.08);border-color:rgba(0,230,118,0.35);}
+  .signal-box.sell{background:rgba(255,61,87,0.08);border-color:rgba(255,61,87,0.35);}
+  .signal-box.hold{background:rgba(255,202,40,0.08);border-color:rgba(255,202,40,0.35);}
+  .signal-icon{font-size:30px;}
+  .signal-title{font-size:18px;font-weight:700;}
+  .signal-box.buy .signal-title{color:var(--green);}
+  .signal-box.sell .signal-title{color:var(--red);}
+  .signal-box.hold .signal-title{color:var(--yellow);}
+  .signal-meta{font-size:12px;color:var(--text2);margin-top:4px;}
+  .pattern-badge{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border-radius:8px;padding:6px 10px;font-size:12px;margin:4px;border:1px solid var(--border);}
+  .pattern-badge.bull{border-color:rgba(0,230,118,0.4);color:var(--green);}
+  .pattern-badge.bear{border-color:rgba(255,61,87,0.4);color:var(--red);}
+  .pattern-badge.neu{border-color:rgba(255,202,40,0.4);color:var(--yellow);}
+  table{width:100%;border-collapse:collapse;font-size:12px;font-family:'JetBrains Mono',monospace;}
+  th{text-align:left;color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:8px 6px;border-bottom:1px solid var(--border);}
+  td{padding:7px 6px;border-bottom:1px solid rgba(26,48,72,0.5);}
+  .table-wrap{max-height:260px;overflow-y:auto;}
+  .empty-state{text-align:center;padding:40px 20px;color:var(--text2);font-size:13px;}
+  .disclaimer{font-size:11px;color:var(--text2);text-align:center;margin-top:6px;}
+  @media(max-width:600px){.price-line{flex-direction:column;align-items:flex-start;}}
+
+  .pattern-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;}
+  .pattern-card.bull{border-left:3px solid var(--green);}
+  .pattern-card.bear{border-left:3px solid var(--red);}
+  .pattern-card.neu{border-left:3px solid var(--yellow);}
+  .pattern-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;}
+  .pattern-card-title{font-weight:700;font-size:13px;color:#fff;}
+  .pattern-card-date{font-size:10px;color:var(--text2);font-family:'JetBrains Mono',monospace;}
+  .confidence-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .confidence-bar-track{flex:1;height:6px;border-radius:4px;background:var(--border);overflow:hidden;}
+  .confidence-bar-fill{height:100%;border-radius:4px;}
+  .confidence-pct{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;min-width:36px;text-align:right;}
+  .checklist{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+  .check-item{font-size:11px;font-family:'JetBrains Mono',monospace;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,0.03);}
+  .check-item.pass{color:var(--green);}
+  .check-item.fail{color:var(--text2);opacity:.6;}
+  .stars{font-size:14px;letter-spacing:2px;color:var(--border);}
+  .stars .filled{color:var(--yellow);}
+
+  .score-meter{position:relative;height:10px;border-radius:6px;background:linear-gradient(90deg,var(--red),var(--orange),var(--yellow),#8bd450,var(--green));margin:12px 0 6px;}
+  .score-marker{position:absolute;top:-5px;width:3px;height:20px;background:#fff;border-radius:2px;box-shadow:0 0 6px rgba(255,255,255,0.8);}
+  .score-scale{display:flex;justify-content:space-between;font-size:9px;color:var(--text2);font-family:'JetBrains Mono',monospace;margin-bottom:4px;}
+  .rating-badge{font-size:20px;font-weight:700;letter-spacing:.5px;}
+
+  .reasons-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px;}
+  .reasons-col{background:var(--bg3);border-radius:10px;padding:12px 14px;}
+  .reasons-col h4{font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+  .reasons-col.support h4{color:var(--green);}
+  .reasons-col.against h4{color:var(--red);}
+  .reasons-col ul{padding-left:16px;}
+  .reasons-col li{font-size:12px;margin-bottom:6px;color:var(--text);}
+  .prob-bar-row{display:flex;align-items:center;gap:8px;margin:4px 0;}
+  .prob-label{font-size:11px;color:var(--text2);width:66px;font-family:'JetBrains Mono',monospace;}
+  .prob-track{flex:1;height:8px;border-radius:4px;background:var(--border);overflow:hidden;}
+  .prob-fill{height:100%;border-radius:4px;}
+
+  .data-status-msg{font-size:12px;color:var(--text2);line-height:1.6;}
+  .data-status-msg .warn{color:var(--yellow);}
+
+  .smc-subhead{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin:10px 0 6px;}
+  .smc-empty{color:var(--text2);font-size:12px;margin-bottom:8px;}
+
+  .install-banner{display:none;align-items:center;justify-content:space-between;gap:10px;background:linear-gradient(135deg,rgba(0,230,118,0.12),rgba(0,184,212,0.12));border:1px solid rgba(0,230,118,0.35);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:12px;}
+  .install-banner button{flex-shrink:0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand-row">
+      <svg width="36" height="36" viewBox="0 0 44 44"><rect x="1" y="1" width="42" height="42" rx="11" fill="#0a1520" stroke="#1a3048"/><text x="8" y="30" font-family="'Space Grotesk',sans-serif" font-size="21" font-weight="700" fill="#00e5ff">M</text><text x="26" y="30" font-family="'Space Grotesk',sans-serif" font-size="21" font-weight="700" fill="#ff8a00">i</text></svg>
+      <div style="text-align:left"><div class="brand-name">MARAK</div><div class="brand-sub">INNOVATION</div></div>
+      <button class="btn install" id="installBtn" onclick="handleInstallClick()">⬇ Install App</button>
+    </div>
+    <h1>Offline Stock Analyzer</h1>
+    <p class="tagline">Import CSV · Zero API calls · All analysis runs on-device</p>
+  </header>
+
+  <div class="install-banner" id="iosInstallBanner">
+    <span>📲 To install on iPhone/iPad: tap the Share icon in Safari, then "Add to Home Screen".</span>
+    <button class="btn secondary" onclick="document.getElementById('iosInstallBanner').style.display='none'">Got it</button>
+  </div>
+
+  <div class="install-banner" id="genericInstallBanner">
+    <span>💻 To install: open your browser menu and choose "Install App" / "Add to Home Screen".</span>
+    <button class="btn secondary" onclick="document.getElementById('genericInstallBanner').style.display='none'">Got it</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Import Data</div>
+    <label class="file-drop" for="csvFile">📁 Tap to select CSV file(s) — Date, Open, High, Low, Close, Volume<br/><span style="opacity:.7">(Symbol column optional — multiple symbols supported · works with day, week, or month candles)</span></label>
+    <input type="file" id="csvFile" accept=".csv" multiple style="display:none"/>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="fallbackSymbol" placeholder="Symbol name if CSV has none (e.g. RELIANCE)" style="flex:1;min-width:180px"/>
+      <button class="btn secondary" onclick="loadSampleData()">Load Sample Data</button>
+    </div>
+    <div id="loadStatus" style="font-size:12px;color:var(--text2);margin-top:8px"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="panel">
+      <div class="panel-title">Symbol</div>
+      <input type="text" id="symbolSearch" placeholder="Search loaded symbols..." style="width:100%;margin-bottom:10px"/>
+      <div class="row" id="symbolChips"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Data Quality</div>
+      <div class="row" style="margin-bottom:10px">
+        <span class="chip active" data-tf="auto" onclick="setTimeframeOverride(this,null)">Auto-detect</span>
+        <span class="chip" data-tf="day" onclick="setTimeframeOverride(this,'Daily')">Day</span>
+        <span class="chip" data-tf="week" onclick="setTimeframeOverride(this,'Weekly')">Week</span>
+        <span class="chip" data-tf="month" onclick="setTimeframeOverride(this,'Monthly')">Month</span>
+      </div>
+      <div id="dataStatusBox" class="data-status-msg"></div>
+    </div>
+
+    <div class="panel">
+      <div class="price-line">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:1px" id="chartSymbolLabel">—</div>
+          <div class="price-val" id="chartPrice">—</div>
+        </div>
+        <div class="price-chg" id="chartChange">—</div>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <span class="chip active" data-chart="candle" onclick="setChartType(this,'candle')">Candlestick</span>
+        <span class="chip" data-chart="line" onclick="setChartType(this,'line')">Line</span>
+        <select id="lookbackSelect" onchange="draw()" style="margin-left:auto">
+          <option value="60">Last 60</option>
+          <option value="120" selected>Last 120</option>
+          <option value="250">Last 250</option>
+          <option value="99999">All</option>
+        </select>
+      </div>
+      <div class="toggle-row">
+        <label class="tgl on" id="tgl_ema20"><input type="checkbox" checked onchange="toggleOverlay('ema20',this)"/>EMA <span id="p_ema20">20</span></label>
+        <label class="tgl on" id="tgl_ema50"><input type="checkbox" checked onchange="toggleOverlay('ema50',this)"/>EMA <span id="p_ema50">50</span></label>
+        <label class="tgl" id="tgl_ema200"><input type="checkbox" onchange="toggleOverlay('ema200',this)"/>EMA <span id="p_ema200">200</span></label>
+        <label class="tgl" id="tgl_bb"><input type="checkbox" onchange="toggleOverlay('bb',this)"/>Bollinger Bands</label>
+        <label class="tgl" id="tgl_vwap"><input type="checkbox" onchange="toggleOverlay('vwap',this)"/>VWAP</label>
+        <label class="tgl on" id="tgl_ichimoku"><input type="checkbox" checked onchange="toggleOverlay('ichimoku',this)"/>Ichimoku Cloud</label>
+        <label class="tgl" id="tgl_sr"><input type="checkbox" onchange="toggleOverlay('sr',this)"/>S/R Lines</label>
+      </div>
+      <canvas id="mainChart" height="300"></canvas>
+      <canvas id="volChart" height="70" style="margin-top:4px"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Indicators</div>
+      <div class="tabs" style="flex-wrap:wrap">
+        <div class="tab active" data-tab="rsi" onclick="setIndTab(this,'rsi')">RSI (<span id="p_rsi">14</span>)</div>
+        <div class="tab" data-tab="macd" onclick="setIndTab(this,'macd')">MACD</div>
+        <div class="tab" data-tab="atr" onclick="setIndTab(this,'atr')">ATR (<span id="p_atr">14</span>)</div>
+        <div class="tab" data-tab="obv" onclick="setIndTab(this,'obv')">OBV</div>
+        <div class="tab" data-tab="cmf" onclick="setIndTab(this,'cmf')">CMF (<span id="p_cmf">20</span>)</div>
+        <div class="tab" data-tab="mfi" onclick="setIndTab(this,'mfi')">MFI (<span id="p_mfi">14</span>)</div>
+      </div>
+      <canvas id="indChart" height="140"></canvas>
+      <div style="font-size:10px;color:var(--text2);margin-top:6px" id="volMaLine">Volume MA shown as white line on the volume chart above.</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Detected Patterns</div>
+      <div id="patternsBox"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Support &amp; Resistance</div>
+      <div id="srBox"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Smart Money Concepts (ICT)</div>
+      <div id="smcBox"></div>
+      <p class="disclaimer" style="margin-top:10px">Simplified rule-based approximations of Liquidity Sweep, HTF Delivery, iFVG, and CISD — not a substitute for discretionary ICT analysis.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Weighted Signal Score</div>
+      <div id="scoreBox"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">AI Structured Analysis</div>
+      <div id="analysisBox"></div>
+      <div id="signalBox"></div>
+      <div id="reasonsBox"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Backtest</div>
+      <div class="row">
+        <select id="strategySelect">
+          <option value="ema">EMA Crossover</option>
+          <option value="rsi">RSI Reversal (30/70)</option>
+          <option value="macd">MACD Crossover</option>
+          <option value="breakout">Breakout</option>
+        </select>
+        <button class="btn" onclick="runBacktest()">Run Backtest</button>
+      </div>
+      <div id="backtestResults" style="margin-top:14px"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">OHLCV Data</div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody id="ohlcvTable"></tbody></table>
+      </div>
+    </div>
+
+    <p class="disclaimer">⚠️ Educational tool only. Pattern detection and signals are simple rule-based heuristics, not financial advice. Always do your own research.</p>
+  </div>
+  <div id="emptyState" class="empty-state">Import a CSV or load sample data to begin.</div>
+</div>
+
+<script>
+// ===================== PWA: MANIFEST + INSTALL =====================
+function roundRectPath(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function generateIconDataURL(size){
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#0a1520';
+  roundRectPath(ctx,0,0,size,size,size*0.22); ctx.fill();
+  ctx.strokeStyle = '#1a3048'; ctx.lineWidth = Math.max(1,size*0.02);
+  roundRectPath(ctx,ctx.lineWidth/2,ctx.lineWidth/2,size-ctx.lineWidth,size-ctx.lineWidth,size*0.2); ctx.stroke();
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${Math.round(size*0.46)}px Arial, sans-serif`;
+  ctx.fillStyle = '#00e5ff';
+  ctx.fillText('M', size*0.14, size*0.56);
+  ctx.fillStyle = '#ff8a00';
+  ctx.fillText('i', size*0.58, size*0.56);
+  return c.toDataURL('image/png');
+}
+try {
+  const manifest = {
+    name: 'Offline Stock Analyzer - Marak Innovation',
+    short_name: 'StockAnalyzer',
+    id: '/',
+    start_url: '.',
+    scope: '.',
+    display: 'standalone',
+    orientation: 'portrait-primary',
+    background_color: '#050a0f',
+    theme_color: '#050a0f',
+    icons: [
+      { src: generateIconDataURL(192), sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: generateIconDataURL(512), sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: generateIconDataURL(512), sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+    ]
+  };
+  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  const manifestURL = URL.createObjectURL(manifestBlob);
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = manifestURL;
+  document.head.appendChild(link);
+
+  const appleCapable = document.createElement('meta');
+  appleCapable.name = 'apple-mobile-web-app-capable';
+  appleCapable.content = 'yes';
+  document.head.appendChild(appleCapable);
+
+  const appleTitle = document.createElement('meta');
+  appleTitle.name = 'apple-mobile-web-app-title';
+  appleTitle.content = 'StockAnalyzer';
+  document.head.appendChild(appleTitle);
+
+  const appleStatusBar = document.createElement('meta');
+  appleStatusBar.name = 'apple-mobile-web-app-status-bar-style';
+  appleStatusBar.content = 'black-translucent';
+  document.head.appendChild(appleStatusBar);
+
+  const appleIcon = document.createElement('link');
+  appleIcon.rel = 'apple-touch-icon';
+  appleIcon.href = generateIconDataURL(192);
+  document.head.appendChild(appleIcon);
+
+  const themeMeta = document.createElement('meta');
+  themeMeta.name = 'theme-color';
+  themeMeta.content = '#050a0f';
+  document.head.appendChild(themeMeta);
+} catch(e){ console.warn('Manifest setup skipped:', e); }
+
+if ('serviceWorker' in navigator) {
+  try {
+    const swSource = `
+      const CACHE_NAME = 'stock-analyzer-cache-v1';
+      self.addEventListener('install', (e) => {
+        self.skipWaiting();
+      });
+      self.addEventListener('activate', (e) => {
+        e.waitUntil(self.clients.claim());
+      });
+      self.addEventListener('fetch', (e) => {
+        if (e.request.method !== 'GET') return;
+        e.respondWith(
+          caches.open(CACHE_NAME).then(async (cache) => {
+            try {
+              const fresh = await fetch(e.request);
+              cache.put(e.request, fresh.clone());
+              return fresh;
+            } catch (err) {
+              const cached = await cache.match(e.request);
+              if (cached) return cached;
+              throw err;
+            }
+          })
+        );
+      });
+    `;
+    const swBlob = new Blob([swSource], { type: 'text/javascript' });
+    const swURL = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swURL).then(() => {
+      console.log('Service worker registered — app is installable and works offline after first load.');
+    }).catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  } catch(e){ console.warn('Service worker setup skipped:', e); }
+}
+
+// ===================== PERMANENT, CROSS-PLATFORM INSTALL BUTTON =====================
+let deferredInstallPrompt = null;
+const isIOS = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+const isStandaloneMode = () => window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
+function refreshInstallButton(){
+  const btn = document.getElementById('installBtn');
+  if (isStandaloneMode()){
+    btn.textContent = '✓ Installed';
+    btn.classList.add('installed');
+  } else {
+    btn.textContent = '⬇ Install App';
+    btn.classList.remove('installed');
+  }
+}
+
+function handleInstallClick(){
+  if (isStandaloneMode()) return;
+  document.getElementById('iosInstallBanner').style.display = 'none';
+  document.getElementById('genericInstallBanner').style.display = 'none';
+  if (deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.finally(() => { deferredInstallPrompt = null; });
+  } else if (isIOS){
+    document.getElementById('iosInstallBanner').style.display = 'flex';
+  } else {
+    document.getElementById('genericInstallBanner').style.display = 'flex';
+  }
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  refreshInstallButton();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  refreshInstallButton();
+});
+refreshInstallButton();
+
+// ===================== STATE =====================
+let dataset = {};
+let activeSymbol = null;
+let chartType = 'candle';
+let overlays = { ema20:true, ema50:true, ema200:false, bb:false, vwap:false, ichimoku:true, sr:false };
+let indTab = 'rsi';
+let cache = {};
+let timeframeOverride = null;
+
+// ===================== CSV IMPORT =====================
+document.getElementById('csvFile').addEventListener('change', (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  const fallback = document.getElementById('fallbackSymbol').value.trim().toUpperCase() || null;
+  let done = 0;
+  files.forEach(file => {
+    Papa.parse(file, {
+      header: true, dynamicTyping: true, skipEmptyLines: true, delimitersToGuess: [',',';','\t','|'],
+      complete: (res) => {
+        importRows(res.data, fallback || file.name.replace(/\.csv$/i,'').toUpperCase());
+        done++;
+        if (done === files.length) finishImport();
+      },
+      error: () => { done++; if (done===files.length) finishImport(); }
+    });
+  });
+});
+
+function normKey(k){ return String(k||'').trim().toLowerCase().replace(/[^a-z]/g,''); }
+
+function parseDateFlexible(v){
+  if (v instanceof Date) return v;
+  if (typeof v === 'number') {
+    const d = new Date(Math.round((v-25569)*86400*1000));
+    if (!isNaN(d.getTime())) return d;
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) {
+    let d1=+m[1], d2=+m[2], y=+m[3];
+    if (d1>12) return new Date(y, d2-1, d1);
+    return new Date(y, d2-1, d1);
+  }
+  m = s.match(/^(\d{1,2})[\-\/]([A-Za-z]{3,})[\-\/](\d{4})$/);
+  if (m) {
+    const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+    const mon = months[m[2].toLowerCase().slice(0,3)];
+    if (mon !== undefined) return new Date(+m[3], mon, +m[1]);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function importRows(rows, fallbackSymbol){
+  if (!rows || !rows.length) return;
+  const first = rows[0];
+  const keyMap = {};
+  Object.keys(first).forEach(k => {
+    const nk = normKey(k);
+    if (nk==='date') keyMap.date=k;
+    else if (nk==='open') keyMap.open=k;
+    else if (nk==='high') keyMap.high=k;
+    else if (nk==='low') keyMap.low=k;
+    else if (nk==='close'||nk==='closeprice') keyMap.close=k;
+    else if (nk.startsWith('vol')) keyMap.volume=k;
+    else if (nk==='symbol'||nk==='ticker'||nk==='scrip'||nk==='scripname') keyMap.symbol=k;
+  });
+  if (!keyMap.date || !keyMap.close) return;
+
+  rows.forEach(r => {
+    const dateObj = parseDateFlexible(r[keyMap.date]);
+    if (!dateObj) return;
+    const close = Number(r[keyMap.close]);
+    if (!isFinite(close)) return;
+    const sym = (keyMap.symbol && r[keyMap.symbol]) ? String(r[keyMap.symbol]).trim().toUpperCase() : fallbackSymbol;
+    if (!sym) return;
+    const candle = {
+      date: dateObj,
+      open: Number(r[keyMap.open]) || close,
+      high: Number(r[keyMap.high]) || close,
+      low: Number(r[keyMap.low]) || close,
+      close: close,
+      volume: Number(r[keyMap.volume]) || 0
+    };
+    if (!dataset[sym]) dataset[sym] = [];
+    dataset[sym].push(candle);
+  });
+}
+
+function finishImport(){
+  Object.keys(dataset).forEach(sym => {
+    const seen = new Map();
+    dataset[sym].forEach(c => seen.set(c.date.getTime(), c));
+    dataset[sym] = Array.from(seen.values()).sort((a,b)=>a.date-b.date);
+  });
+  cache = {};
+  const syms = Object.keys(dataset);
+  document.getElementById('loadStatus').textContent = syms.length ? `Loaded ${syms.length} symbol(s), ${Object.values(dataset).reduce((a,c)=>a+c.length,0)} total candles.` : 'No valid rows found — check your CSV columns.';
+  if (syms.length) {
+    activeSymbol = syms[0];
+    showApp();
+  }
+}
+
+function loadSampleData(){
+  dataset = {};
+  const regimes = {
+    BULLDEMO: 0.0012,
+    BEARDEMO: -0.0012,
+    CHOPDEMO: 0.0
+  };
+  Object.keys(regimes).forEach((sym) => {
+    const drift = regimes[sym];
+    let price = 1000;
+    const candles = [];
+    let d = new Date(); d.setDate(d.getDate()-300);
+    for (let i=0;i<300;i++){
+      const vol = 0.018;
+      const chg = drift + (Math.random()*2-1)*vol;
+      const open = price;
+      price = Math.max(1, price*(1+chg));
+      const close = price;
+      const high = Math.max(open,close)*(1+Math.random()*0.008);
+      const low = Math.min(open,close)*(1-Math.random()*0.008);
+      const volume = Math.round(500000 + Math.random()*800000);
+      const dt = new Date(d); dt.setDate(dt.getDate()+i);
+      if (dt.getDay()===0 || dt.getDay()===6) continue;
+      candles.push({date:dt, open, high, low, close, volume});
+    }
+    dataset[sym] = candles;
+  });
+  cache = {};
+  activeSymbol = 'BULLDEMO';
+  document.getElementById('loadStatus').textContent = 'Sample data loaded — BULLDEMO (uptrend, should read Buy), BEARDEMO (downtrend, should read Sell), CHOPDEMO (sideways, should read Hold). Synthetic data, for testing only.';
+  showApp();
+}
+
+function showApp(){
+  document.getElementById('app').style.display='block';
+  document.getElementById('emptyState').style.display='none';
+  renderSymbolChips();
+  draw();
+}
+
+// ===================== SYMBOL SELECT =====================
+document.getElementById('symbolSearch').addEventListener('input', renderSymbolChips);
+function renderSymbolChips(){
+  const q = document.getElementById('symbolSearch').value.trim().toUpperCase();
+  const box = document.getElementById('symbolChips');
+  box.innerHTML='';
+  Object.keys(dataset).filter(s=>s.includes(q)).forEach(sym => {
+    const el = document.createElement('span');
+    el.className = 'chip'+(sym===activeSymbol?' active':'');
+    el.textContent = sym;
+    el.onclick = () => { activeSymbol = sym; renderSymbolChips(); draw(); };
+    box.appendChild(el);
+  });
+}
+
+function setChartType(el, type){
+  document.querySelectorAll('[data-chart]').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  chartType = type;
+  draw();
+}
+function toggleOverlay(key, input){
+  overlays[key] = input.checked;
+  document.getElementById('tgl_'+key).classList.toggle('on', input.checked);
+  draw();
+}
+function setIndTab(el, tab){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  indTab = tab;
+  draw();
+}
+function setTimeframeOverride(el, val){
+  document.querySelectorAll('[data-tf]').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  timeframeOverride = val;
+  draw();
+}
+
+// ===================== ADAPTIVE PERIODS =====================
+function getPeriods(n){
+  const scale = Math.max(0.15, Math.min(1, n/220));
+  const p = {};
+  p.ema20 = Math.max(5, Math.round(20*scale));
+  p.ema50 = Math.max(p.ema20+5, Math.round(50*scale));
+  p.ema200 = n >= 40 ? Math.max(p.ema50+10, Math.round(200*scale)) : null;
+  p.rsi = Math.max(5, Math.round(14*scale));
+  p.macdFast = Math.max(4, Math.round(12*scale));
+  p.macdSlow = Math.max(p.macdFast+4, Math.round(26*scale));
+  p.macdSignal = Math.max(3, Math.round(9*scale));
+  p.atr = Math.max(5, Math.round(14*scale));
+  p.cmf = Math.max(5, Math.round(20*scale));
+  p.mfi = Math.max(5, Math.round(14*scale));
+  p.vol = Math.max(5, Math.round(20*scale));
+  p.bb = Math.max(5, Math.round(20*scale));
+  p.srLookback = Math.max(8, Math.round(20*scale));
+  p.breakout = Math.max(8, Math.round(20*scale));
+  p.momentum = Math.max(4, Math.round(10*scale));
+  p.tenkan = Math.max(4, Math.round(9*scale));
+  p.kijun = Math.max(p.tenkan+3, Math.round(26*scale));
+  p.senkouB = Math.max(p.kijun+6, Math.round(52*scale));
+  p.displacement = p.kijun;
+  p.limited = scale < 1;
+  return p;
+}
+
+function detectTimeframe(candles){
+  if (candles.length<3) return 'Unknown';
+  const gaps=[];
+  for(let i=1;i<candles.length;i++) gaps.push((candles[i].date-candles[i-1].date)/86400000);
+  gaps.sort((a,b)=>a-b);
+  const median = gaps[Math.floor(gaps.length/2)];
+  if (median<=3) return 'Daily';
+  if (median<=10) return 'Weekly';
+  if (median<=45) return 'Monthly';
+  return 'Sparse/Custom';
+}
+
+// ===================== INDICATORS =====================
+function computeSMA(arr, period){
+  const out = new Array(arr.length).fill(null);
+  let sum = 0;
+  for (let i=0;i<arr.length;i++){
+    sum += arr[i];
+    if (i>=period) sum -= arr[i-period];
+    if (i>=period-1) out[i] = sum/period;
+  }
+  return out;
+}
+function computeEMA(arr, period){
+  const out = new Array(arr.length).fill(null);
+  const k = 2/(period+1);
+  let ema = null;
+  for (let i=0;i<arr.length;i++){
+    if (i < period-1) continue;
+    if (ema===null){
+      let sum=0; for(let j=i-period+1;j<=i;j++) sum+=arr[j];
+      ema = sum/period;
+    } else {
+      ema = arr[i]*k + ema*(1-k);
+    }
+    out[i] = ema;
+  }
+  return out;
+}
+function computeStdDev(arr, period, sma){
+  const out = new Array(arr.length).fill(null);
+  for (let i=period-1;i<arr.length;i++){
+    let sum=0;
+    for (let j=i-period+1;j<=i;j++) sum += Math.pow(arr[j]-sma[i],2);
+    out[i] = Math.sqrt(sum/period);
+  }
+  return out;
+}
+function computeRSI(closes, period=14){
+  const out = new Array(closes.length).fill(null);
+  let avgGain=0, avgLoss=0;
+  for (let i=1;i<closes.length;i++){
+    const chg = closes[i]-closes[i-1];
+    const gain = chg>0?chg:0, loss = chg<0?-chg:0;
+    if (i<=period){
+      avgGain += gain/period; avgLoss += loss/period;
+      if (i===period){
+        const rs = avgLoss===0?100:avgGain/avgLoss;
+        out[i] = 100-(100/(1+rs));
+      }
+    } else {
+      avgGain = (avgGain*(period-1)+gain)/period;
+      avgLoss = (avgLoss*(period-1)+loss)/period;
+      const rs = avgLoss===0?100:avgGain/avgLoss;
+      out[i] = 100-(100/(1+rs));
+    }
+  }
+  return out;
+}
+function computeMACD(closes, fast=12, slow=26, signal=9){
+  const emaFast = computeEMA(closes, fast);
+  const emaSlow = computeEMA(closes, slow);
+  const macdLine = closes.map((_,i)=> (emaFast[i]!=null && emaSlow[i]!=null) ? emaFast[i]-emaSlow[i] : null);
+  const validMacd = macdLine.filter(v=>v!==null);
+  const signalRaw = computeEMA(validMacd, signal);
+  const signalLine = new Array(closes.length).fill(null);
+  let vi=0;
+  for (let i=0;i<macdLine.length;i++){ if (macdLine[i]!==null){ signalLine[i]=signalRaw[vi]; vi++; } }
+  const hist = macdLine.map((v,i)=> (v!=null && signalLine[i]!=null) ? v-signalLine[i] : null);
+  return {macdLine, signalLine, hist};
+}
+function computeATR(candles, period=14){
+  const out = new Array(candles.length).fill(null);
+  const tr = new Array(candles.length).fill(null);
+  for (let i=0;i<candles.length;i++){
+    if (i===0){ tr[i]=candles[i].high-candles[i].low; continue; }
+    tr[i] = Math.max(candles[i].high-candles[i].low, Math.abs(candles[i].high-candles[i-1].close), Math.abs(candles[i].low-candles[i-1].close));
+  }
+  let atr=null;
+  for (let i=0;i<candles.length;i++){
+    if (i<period-1) continue;
+    if (atr===null){ let sum=0; for(let j=i-period+1;j<=i;j++) sum+=tr[j]; atr=sum/period; }
+    else atr = (atr*(period-1)+tr[i])/period;
+    out[i]=atr;
+  }
+  return out;
+}
+function computeVWAP(candles){
+  const out = new Array(candles.length).fill(null);
+  let cumPV=0, cumVol=0;
+  for (let i=0;i<candles.length;i++){
+    const typical = (candles[i].high+candles[i].low+candles[i].close)/3;
+    cumPV += typical*candles[i].volume;
+    cumVol += candles[i].volume;
+    out[i] = cumVol>0 ? cumPV/cumVol : candles[i].close;
+  }
+  return out;
+}
+
+function computeOBV(candles){
+  const out = new Array(candles.length).fill(0);
+  let obv = 0;
+  for (let i=0;i<candles.length;i++){
+    if (i===0){ out[i]=0; continue; }
+    if (candles[i].close>candles[i-1].close) obv += candles[i].volume;
+    else if (candles[i].close<candles[i-1].close) obv -= candles[i].volume;
+    out[i] = obv;
+  }
+  return out;
+}
+function computeCMF(candles, period=20){
+  const out = new Array(candles.length).fill(null);
+  const mfv = candles.map(c => {
+    const range = c.high-c.low;
+    const mult = range>0 ? ((c.close-c.low)-(c.high-c.close))/range : 0;
+    return mult*c.volume;
+  });
+  for (let i=period-1;i<candles.length;i++){
+    let sumMfv=0, sumVol=0;
+    for (let j=i-period+1;j<=i;j++){ sumMfv += mfv[j]; sumVol += candles[j].volume; }
+    out[i] = sumVol>0 ? sumMfv/sumVol : 0;
+  }
+  return out;
+}
+function computeMFI(candles, period=14){
+  const out = new Array(candles.length).fill(null);
+  const typical = candles.map(c => (c.high+c.low+c.close)/3);
+  const rawMF = typical.map((tp,i)=> i>0 ? tp*candles[i].volume : 0);
+  for (let i=period;i<candles.length;i++){
+    let posMF=0, negMF=0;
+    for (let j=i-period+1;j<=i;j++){
+      if (typical[j] > typical[j-1]) posMF += rawMF[j];
+      else if (typical[j] < typical[j-1]) negMF += rawMF[j];
+    }
+    if (negMF===0) out[i] = 100;
+    else { const mr = posMF/negMF; out[i] = 100-(100/(1+mr)); }
+  }
+  return out;
+}
+function computeVolumeMA(candles, period=20){
+  const vols = candles.map(c=>c.volume);
+  return computeSMA(vols, period);
+}
+
+// Ichimoku Kinko Hyo — Tenkan-sen, Kijun-sen, Senkou Span A/B (cloud), Chikou Span.
+// Runs silently as a background scoring signal in computeSignalScore(), and can
+// optionally be drawn as a cloud overlay on the main chart.
+function computeIchimoku(candles, periods){
+  const n = candles.length;
+  function midOf(period){
+    const out = new Array(n).fill(null);
+    for (let i=period-1;i<n;i++){
+      let hi=-Infinity, lo=Infinity;
+      for (let j=i-period+1;j<=i;j++){ if (candles[j].high>hi) hi=candles[j].high; if (candles[j].low<lo) lo=candles[j].low; }
+      out[i] = (hi+lo)/2;
+    }
+    return out;
+  }
+  const tenkan = midOf(periods.tenkan);
+  const kijun = midOf(periods.kijun);
+  const spanARaw = tenkan.map((t,i)=> (t!=null && kijun[i]!=null) ? (t+kijun[i])/2 : null);
+  const spanBRaw = midOf(periods.senkouB);
+  const disp = periods.displacement;
+
+  const spanA = new Array(n).fill(null);
+  const spanB = new Array(n).fill(null);
+  for (let i=0;i<n;i++){
+    const src = i-disp;
+    if (src>=0){ spanA[i] = spanARaw[src]; spanB[i] = spanBRaw[src]; }
+  }
+  const chikou = new Array(n).fill(null);
+  for (let i=0;i<n-disp;i++){ chikou[i] = candles[i+disp].close; }
+
+  return { tenkan, kijun, spanA, spanB, spanARaw, spanBRaw, chikou, periods };
+}
+
+function getComputed(sym){
+  if (cache[sym]) return cache[sym];
+  const candles = dataset[sym];
+  const n = candles.length;
+  const periods = getPeriods(n);
+  const closes = candles.map(c=>c.close);
+  const ema20 = computeEMA(closes,periods.ema20);
+  const ema50 = computeEMA(closes,periods.ema50);
+  const ema200 = periods.ema200 ? computeEMA(closes,periods.ema200) : new Array(n).fill(null);
+  const sma20 = computeSMA(closes,periods.bb);
+  const std20 = computeStdDev(closes,periods.bb,sma20);
+  const bbUpper = closes.map((_,i)=> sma20[i]!=null ? sma20[i]+2*std20[i] : null);
+  const bbLower = closes.map((_,i)=> sma20[i]!=null ? sma20[i]-2*std20[i] : null);
+  const rsi = computeRSI(closes,periods.rsi);
+  const macd = computeMACD(closes, periods.macdFast, periods.macdSlow, periods.macdSignal);
+  const atr = computeATR(candles,periods.atr);
+  const vwap = computeVWAP(candles);
+  const obv = computeOBV(candles);
+  const cmf = computeCMF(candles,periods.cmf);
+  const mfi = computeMFI(candles,periods.mfi);
+  const volMA = computeVolumeMA(candles,periods.vol);
+  const ichimoku = computeIchimoku(candles, periods);
+  const result = {candles, closes, ema20, ema50, ema200, sma20, bbUpper, bbLower, rsi, macd, atr, vwap, obv, cmf, mfi, volMA, ichimoku, periods};
+  cache[sym] = result;
+  return result;
+}
+
+// ===================== PATTERN DETECTION =====================
+function scanRawPatterns(sym){
+  const d = getComputed(sym);
+  const {candles, periods} = d;
+  const patterns = [];
+  const n = candles.length;
+  const scanStart = Math.max(1, n-40);
+
+  for (let i=scanStart;i<n;i++){
+    const c = candles[i];
+    const body = Math.abs(c.close-c.open);
+    const range = c.high-c.low;
+    if (range>0 && body/range < 0.1) patterns.push({name:'Doji', date:c.date, type:'neu', idx:i});
+    const lowerWick = Math.min(c.open,c.close)-c.low;
+    const upperWick = c.high-Math.max(c.open,c.close);
+    if (body>0 && lowerWick >= 2*body && upperWick <= body*0.5) patterns.push({name:'Hammer', date:c.date, type:'bull', idx:i});
+    if (i>0){
+      const p = candles[i-1];
+      const pBear = p.close<p.open, pBull = p.close>p.open;
+      const cBull = c.close>c.open, cBear = c.close<c.open;
+      if (pBear && cBull && c.open<=p.close && c.close>=p.open) patterns.push({name:'Bullish Engulfing', date:c.date, type:'bull', idx:i});
+      if (pBull && cBear && c.open>=p.close && c.close<=p.open) patterns.push({name:'Bearish Engulfing', date:c.date, type:'bear', idx:i});
+    }
+  }
+
+  const win = Math.min(4, Math.max(1, Math.floor(n/12)));
+  const peaks=[], troughs=[];
+  for (let i=win;i<n-win;i++){
+    const seg = candles.slice(i-win,i+win+1).map(c=>c.high);
+    if (candles[i].high === Math.max(...seg)) peaks.push(i);
+    const segL = candles.slice(i-win,i+win+1).map(c=>c.low);
+    if (candles[i].low === Math.min(...segL)) troughs.push(i);
+  }
+  const minSpacing = Math.max(3, Math.round(win*1.25));
+  for (let i=0;i<peaks.length-1;i++){
+    const p1=peaks[i], p2=peaks[i+1];
+    if (p2-p1 < minSpacing) continue;
+    const h1=candles[p1].high, h2=candles[p2].high;
+    if (Math.abs(h1-h2)/((h1+h2)/2) < 0.03){
+      const troughBetween = Math.min(...candles.slice(p1,p2+1).map(c=>c.low));
+      if ((Math.min(h1,h2)-troughBetween)/troughBetween > 0.03)
+        patterns.push({name:'Double Top', date:candles[p2].date, type:'bear', idx:p2});
+    }
+  }
+  for (let i=0;i<troughs.length-1;i++){
+    const t1=troughs[i], t2=troughs[i+1];
+    if (t2-t1 < minSpacing) continue;
+    const l1=candles[t1].low, l2=candles[t2].low;
+    if (Math.abs(l1-l2)/((l1+l2)/2) < 0.03){
+      const peakBetween = Math.max(...candles.slice(t1,t2+1).map(c=>c.high));
+      if ((peakBetween-Math.max(l1,l2))/Math.max(l1,l2) > 0.03)
+        patterns.push({name:'Double Bottom', date:candles[t2].date, type:'bull', idx:t2});
+    }
+  }
+  for (let i=0;i<peaks.length-2;i++){
+    const [p1,p2,p3] = [peaks[i],peaks[i+1],peaks[i+2]];
+    if (p3-p1 > Math.max(60, n*0.3) || p2-p1<minSpacing-1 || p3-p2<minSpacing-1) continue;
+    const [h1,h2,h3] = [candles[p1].high,candles[p2].high,candles[p3].high];
+    if (h2>h1 && h2>h3 && Math.abs(h1-h3)/((h1+h3)/2) < 0.08)
+      patterns.push({name:'Head & Shoulders', date:candles[p3].date, type:'bear', idx:p3});
+  }
+
+  const bo = periods.breakout;
+  if (n>bo+1){
+    const recentHigh = Math.max(...candles.slice(n-bo-1,n-1).map(c=>c.high));
+    const recentLow = Math.min(...candles.slice(n-bo-1,n-1).map(c=>c.low));
+    const last = candles[n-1];
+    if (last.close > recentHigh) patterns.push({name:'Bullish Breakout', date:last.date, type:'bull', idx:n-1});
+    if (last.close < recentLow) patterns.push({name:'Bearish Breakdown', date:last.date, type:'bear', idx:n-1});
+  }
+
+  return patterns;
+}
+
+function scorePattern(sym, pattern){
+  const d = getComputed(sym);
+  const { candles, ema20, ema50, rsi, macd, atr, volMA, periods } = d;
+  const i = pattern.idx;
+  const c = candles[i];
+  const checks = [];
+  let passCount = 0;
+
+  const e20=ema20[i], e50=ema50[i];
+  let trendUp = e20!=null && e50!=null && c.close>e50 && e20>=e50*0.999;
+  let trendDown = e20!=null && e50!=null && c.close<e50 && e20<=e50*1.001;
+  let trendOk;
+  if (pattern.type==='bull'){ trendOk = trendUp; checks.push({label:'Trend: Uptrend', pass:trendOk}); }
+  else if (pattern.type==='bear'){ trendOk = trendDown; checks.push({label:'Trend: Downtrend', pass:trendOk}); }
+  else { trendOk = true; checks.push({label:'Trend: Neutral context', pass:true}); }
+  if (trendOk) passCount++;
+
+  const avgVol = volMA[i];
+  const volOk = avgVol ? c.volume > avgVol : false;
+  checks.push({label:'Volume: Above Average', pass:volOk});
+  if (volOk) passCount++;
+
+  const candleAtr = atr[i] || 0;
+  const body = Math.abs(c.close-c.open);
+  const range = c.high-c.low;
+  const atrOk = candleAtr>0 ? (range >= candleAtr*0.6 || body >= candleAtr*0.4) : true;
+  checks.push({label:'ATR: Significant Range', pass:atrOk});
+  if (atrOk) passCount++;
+
+  const rsiVal = rsi[i], rsiPrev = rsi[i-1];
+  let rsiOk = false, rsiLabel = 'RSI: n/a';
+  if (rsiVal!=null && rsiPrev!=null){
+    if (pattern.type==='bull'){ rsiOk = rsiVal>rsiPrev && rsiVal<75; rsiLabel = `RSI: ${rsiVal.toFixed(0)} ${rsiVal>rsiPrev?'Rising':'Falling'}`; }
+    else if (pattern.type==='bear'){ rsiOk = rsiVal<rsiPrev && rsiVal>25; rsiLabel = `RSI: ${rsiVal.toFixed(0)} ${rsiVal<rsiPrev?'Falling':'Rising'}`; }
+    else { rsiOk = rsiVal>35 && rsiVal<65; rsiLabel = `RSI: ${rsiVal.toFixed(0)} Neutral`; }
+  }
+  checks.push({label:rsiLabel, pass:rsiOk});
+  if (rsiOk) passCount++;
+
+  const hist = macd.hist[i], histPrev = macd.hist[i-1];
+  let macdOk = false, macdLabel='MACD: n/a';
+  if (hist!=null){
+    if (pattern.type==='bull'){ macdOk = hist>0 || (histPrev!=null && hist>histPrev); macdLabel = 'MACD: Bullish'; }
+    else if (pattern.type==='bear'){ macdOk = hist<0 || (histPrev!=null && hist<histPrev); macdLabel = 'MACD: Bearish'; }
+    else { macdOk = true; macdLabel = 'MACD: Neutral'; }
+  }
+  checks.push({label:macdLabel, pass:macdOk});
+  if (macdOk) passCount++;
+
+  const lookStart = Math.max(0, i-periods.srLookback);
+  const priorCandles = candles.slice(lookStart, i);
+  let srOk = false, srLabel = 'Near Support/Resistance';
+  if (priorCandles.length){
+    const priorLow = Math.min(...priorCandles.map(x=>x.low));
+    const priorHigh = Math.max(...priorCandles.map(x=>x.high));
+    const nearSupport = Math.abs(c.low-priorLow)/priorLow < 0.03;
+    const nearResistance = Math.abs(c.high-priorHigh)/priorHigh < 0.03;
+    if (pattern.type==='bull'){ srOk = nearSupport; srLabel = 'Near Support'; }
+    else if (pattern.type==='bear'){ srOk = nearResistance; srLabel = 'Near Resistance'; }
+    else { srOk = nearSupport || nearResistance; srLabel = 'Near Key Level'; }
+  }
+  checks.push({label:srLabel, pass:srOk});
+  if (srOk) passCount++;
+
+  const confidence = Math.round((passCount/checks.length)*100);
+  const stars = Math.max(1, Math.min(5, Math.round(confidence/20)));
+
+  return { ...pattern, confidence, stars, checks };
+}
+
+function detectPatterns(sym, opts){
+  opts = opts || {};
+  const minConfidence = opts.minConfidence!=null ? opts.minConfidence : 50;
+  const raw = scanRawPatterns(sym);
+  const scored = raw.map(p => scorePattern(sym, p)).filter(p => p.confidence >= minConfidence);
+  return scored.sort((a,b)=> (b.idx-a.idx) || (b.confidence-a.confidence)).slice(0,10);
+}
+
+// ===================== SMART MONEY CONCEPTS (ICT) =====================
+function computeSwings(candles, win){
+  win = win || Math.min(4, Math.max(2, Math.floor(candles.length/15)));
+  const swingHighs=[], swingLows=[];
+  for (let i=win;i<candles.length-win;i++){
+    const segH = candles.slice(i-win,i+win+1).map(c=>c.high);
+    if (candles[i].high === Math.max(...segH)) swingHighs.push(i);
+    const segL = candles.slice(i-win,i+win+1).map(c=>c.low);
+    if (candles[i].low === Math.min(...segL)) swingLows.push(i);
+  }
+  return {swingHighs, swingLows, win};
+}
+
+// Clusters swing highs/lows into distinct Support & Resistance zones, ranked
+// by how many times price has touched/respected each zone and how close it
+// is to the current price.
+function detectSupportResistance(sym){
+  const d = getComputed(sym);
+  const { candles } = d;
+  const n = candles.length;
+  if (n<10) return { support:[], resistance:[], price:candles[n-1].close };
+  const price = candles[n-1].close;
+  const { swingHighs, swingLows } = computeSwings(candles);
+  const tolerance = 0.018; // ~1.8% cluster tolerance
+
+  function cluster(idxs, isHigh){
+    const pts = idxs.map(i => ({ price: isHigh?candles[i].high:candles[i].low, idx:i }));
+    pts.sort((a,b)=>a.price-b.price);
+    const zones = [];
+    pts.forEach(p => {
+      const zone = zones.find(z => Math.abs(p.price-z.avg)/z.avg < tolerance);
+      if (zone){ zone.points.push(p); zone.avg = zone.points.reduce((a,x)=>a+x.price,0)/zone.points.length; zone.lastIdx = Math.max(zone.lastIdx, p.idx); }
+      else zones.push({ avg:p.price, points:[p], lastIdx:p.idx });
+    });
+    return zones.map(z => ({
+      level: z.avg,
+      touches: z.points.length,
+      recency: z.lastIdx,
+      distancePct: ((z.avg-price)/price)*100
+    }));
+  }
+
+  const resAll = cluster(swingHighs, true).filter(z=>z.level>price);
+  const supAll = cluster(swingLows, false).filter(z=>z.level<price);
+
+  const rank = (arr) => arr.sort((a,b)=> (b.touches-a.touches) || (Math.abs(a.distancePct)-Math.abs(b.distancePct)));
+  const resistance = rank(resAll).slice(0,4).sort((a,b)=>a.level-b.level);
+  const support = rank(supAll).slice(0,4).sort((a,b)=>b.level-a.level);
+
+  return { support, resistance, price };
+}
+
+function detectLiquiditySweeps(sym){
+  const d = getComputed(sym);
+  const {candles} = d;
+  const n = candles.length;
+  if (n<10) return [];
+  const {swingHighs, swingLows} = computeSwings(candles);
+  const sweeps = [];
+  const usedHighs = new Set(), usedLows = new Set();
+  const scanStart = Math.max(1, n-60);
+  for (let i=scanStart;i<n;i++){
+    for (let k=swingHighs.length-1;k>=0;k--){
+      const hi = swingHighs[k];
+      if (hi>=i || hi<i-40 || usedHighs.has(hi)) continue;
+      const level = candles[hi].high;
+      if (candles[i].high>level && candles[i].close<level){
+        sweeps.push({type:'bear', idx:i, level, sweptIdx:hi, date:candles[i].date, label:'Buy-side liquidity swept above prior high'});
+        usedHighs.add(hi);
+      }
+      break;
+    }
+    for (let k=swingLows.length-1;k>=0;k--){
+      const lo = swingLows[k];
+      if (lo>=i || lo<i-40 || usedLows.has(lo)) continue;
+      const level = candles[lo].low;
+      if (candles[i].low<level && candles[i].close>level){
+        sweeps.push({type:'bull', idx:i, level, sweptIdx:lo, date:candles[i].date, label:'Sell-side liquidity swept below prior low'});
+        usedLows.add(lo);
+      }
+      break;
+    }
+  }
+  return sweeps.sort((a,b)=>b.idx-a.idx).slice(0,8);
+}
+
+function computeHTFDelivery(sym, factor){
+  const d = getComputed(sym);
+  const {candles} = d;
+  if (candles.length<15) return null;
+  factor = factor || Math.max(3, Math.min(10, Math.round(candles.length/60)));
+  const htf = [];
+  for (let i=0;i<candles.length;i+=factor){
+    const chunk = candles.slice(i, i+factor);
+    if (!chunk.length) continue;
+    htf.push({
+      date: chunk[chunk.length-1].date,
+      open: chunk[0].open,
+      high: Math.max(...chunk.map(c=>c.high)),
+      low: Math.min(...chunk.map(c=>c.low)),
+      close: chunk[chunk.length-1].close
+    });
+  }
+  if (htf.length<3) return null;
+  const last3 = htf.slice(-3);
+  let bias='Neutral', biasDetail='Insufficient HTF structure to confirm bias';
+  if (last3[2].high>last3[1].high && last3[2].low>last3[1].low){ bias='Bullish'; biasDetail='HTF printing higher-high & higher-low'; }
+  else if (last3[2].high<last3[1].high && last3[2].low<last3[1].low){ bias='Bearish'; biasDetail='HTF printing lower-high & lower-low'; }
+  const recentHtf = htf.slice(-10);
+  const rangeHigh = Math.max(...recentHtf.map(c=>c.high));
+  const rangeLow = Math.min(...recentHtf.map(c=>c.low));
+  const mid = (rangeHigh+rangeLow)/2;
+  const lastClose = candles[candles.length-1].close;
+  const zone = lastClose>=mid ? 'Premium' : 'Discount';
+  return {factor, bias, biasDetail, zone, rangeHigh, rangeLow, mid, lastClose};
+}
+
+function detectFVGs(sym){
+  const d = getComputed(sym);
+  const {candles} = d;
+  const n = candles.length;
+  const fvgs = [];
+  const scanStart = Math.max(2, n-60);
+  for (let i=scanStart;i<n;i++){
+    const c1=candles[i-2], c3=candles[i];
+    if (c1.high < c3.low){
+      fvgs.push({type:'bull', idx:i, top:c3.low, bottom:c1.high, date:c3.date, filled:false});
+    } else if (c1.low > c3.high){
+      fvgs.push({type:'bear', idx:i, top:c1.low, bottom:c3.high, date:c3.date, filled:false});
+    }
+  }
+  fvgs.forEach(f=>{
+    for (let j=f.idx+1;j<n;j++){
+      if (f.type==='bull' && candles[j].close<f.bottom){ f.filled=true; f.filledIdx=j; break; }
+      if (f.type==='bear' && candles[j].close>f.top){ f.filled=true; f.filledIdx=j; break; }
+    }
+  });
+  return fvgs;
+}
+
+function detectInverseFVGs(sym){
+  const fvgs = detectFVGs(sym);
+  const d = getComputed(sym);
+  const {candles} = d;
+  return fvgs.filter(f=>f.filled).map(f=>({
+    type: f.type==='bull' ? 'bear' : 'bull',
+    idx: f.filledIdx,
+    date: candles[f.filledIdx].date,
+    zoneTop: f.top, zoneBottom: f.bottom,
+    label: f.type==='bull' ? 'Bullish FVG inversed — now acting as resistance' : 'Bearish FVG inversed — now acting as support'
+  })).sort((a,b)=>b.idx-a.idx).slice(0,6);
+}
+
+function detectCISD(sym){
+  const d = getComputed(sym);
+  const {candles} = d;
+  const n = candles.length;
+  if (n<6) return null;
+  const lastDir = candles[n-1].close>=candles[n-1].open ? 'up':'down';
+  let runEnd=-1, runStart=-1;
+  for (let j=n-2;j>=1;j--){
+    const dir = candles[j].close>=candles[j].open?'up':'down';
+    if (dir!==lastDir){
+      if (runEnd===-1) runEnd=j;
+      runStart=j;
+    } else break;
+  }
+  if (runStart===-1) return null;
+  const cisdLevel = candles[runStart].open;
+  const lastClose = candles[n-1].close;
+  let confirmed=false, direction=null;
+  if (lastDir==='up' && lastClose>cisdLevel){ confirmed=true; direction='bull'; }
+  else if (lastDir==='down' && lastClose<cisdLevel){ confirmed=true; direction='bear'; }
+  return {
+    confirmed, direction, level: cisdLevel,
+    runStart, runEnd, runLength: runEnd-runStart+1,
+    date: candles[n-1].date,
+    label: confirmed
+      ? `CISD confirmed — closed ${direction==='bull'?'above':'below'} opposing leg's origin (₹${cisdLevel.toFixed(2)})`
+      : `Awaiting CISD — needs a close ${lastDir==='up'?'above':'below'} ₹${cisdLevel.toFixed(2)}`
+  };
+}
+
+// ===================== WEIGHTED SIGNAL ENGINE =====================
+function computeSignalScore(sym){
+  const d = getComputed(sym);
+  const { periods } = d;
+  const n = d.candles.length;
+  const last = d.candles[n-1];
+  const price = last.close;
+  const e20=d.ema20[n-1], e50=d.ema50[n-1], e200=d.ema200[n-1];
+  const e20p=d.ema20[n-2], e50p=d.ema50[n-2];
+  const rsi = d.rsi[n-1], rsiPrev = d.rsi[n-2];
+  const macdLine = d.macd.macdLine[n-1], signalLine = d.macd.signalLine[n-1];
+  const hist = d.macd.hist[n-1], histPrev = d.macd.hist[n-2];
+  const avgVol = d.volMA[n-1];
+  const components = [];
+
+  let trendScore = 0, trendLabel = 'Neutral / Sideways';
+  if (e20!=null && e50!=null){
+    if (price>e20 && e20>e50 && (e200==null||e50>e200)) { trendScore=2; trendLabel='Strong Bullish'; }
+    else if (price>e50) { trendScore=1; trendLabel='Bullish'; }
+    else if (price<e20 && e20<e50 && (e200==null||e50<e200)) { trendScore=-2; trendLabel='Strong Bearish'; }
+    else if (price<e50) { trendScore=-1; trendLabel='Bearish'; }
+  }
+  components.push({name:'Trend', score:trendScore, max:2, detail:trendLabel});
+
+  let alignScore = 0;
+  if (e20!=null && e50!=null && e200!=null){
+    if (e20>e50 && e50>e200) alignScore = 1;
+    else if (e20<e50 && e50<e200) alignScore = -1;
+  }
+  components.push({name:'EMA Alignment', score:alignScore, max:1, detail: alignScore>0?'Fast>Mid>Slow (bullish stack)':alignScore<0?'Fast<Mid<Slow (bearish stack)':'Mixed / insufficient history'});
+
+  let crossScore = 0, crossDetail = 'No recent cross';
+  if (e20!=null && e50!=null && e20p!=null && e50p!=null){
+    if (e20p<=e50p && e20>e50){ crossScore=1; crossDetail='Bullish crossover (fast over mid)'; }
+    else if (e20p>=e50p && e20<e50){ crossScore=-1; crossDetail='Bearish crossover (fast under mid)'; }
+  }
+  components.push({name:'EMA Crossover', score:crossScore, max:1, detail:crossDetail});
+
+  let rsiScore = 0, rsiDetail = 'RSI unavailable';
+  if (rsi!=null && rsiPrev!=null){
+    if (rsi>45 && rsi<70 && rsi>rsiPrev){ rsiScore=1; rsiDetail=`${rsi.toFixed(0)} rising`; }
+    else if (rsi<55 && rsi>30 && rsi<rsiPrev){ rsiScore=-1; rsiDetail=`${rsi.toFixed(0)} falling`; }
+    else if (rsi>=70){ rsiScore=-0.5; rsiDetail=`${rsi.toFixed(0)} overbought`; }
+    else if (rsi<=30){ rsiScore=0.5; rsiDetail=`${rsi.toFixed(0)} oversold`; }
+    else rsiDetail = `${rsi.toFixed(0)} neutral`;
+  }
+  components.push({name:'RSI', score:rsiScore, max:1, detail:rsiDetail});
+
+  let macdScore = 0, macdDetail = 'MACD unavailable';
+  if (macdLine!=null && signalLine!=null){
+    if (macdLine>signalLine && hist>histPrev){ macdScore=1; macdDetail='Bullish, histogram rising'; }
+    else if (macdLine<signalLine && hist<histPrev){ macdScore=-1; macdDetail='Bearish, histogram falling'; }
+    else if (macdLine>signalLine){ macdScore=0.5; macdDetail='Bullish, momentum fading'; }
+    else { macdScore=-0.5; macdDetail='Bearish, momentum fading'; }
+  }
+  components.push({name:'MACD', score:macdScore, max:1, detail:macdDetail});
+
+  let volScore = 0, volDetail = 'Volume unavailable';
+  if (avgVol){
+    const aboveAvg = last.volume > avgVol;
+    const up = last.close >= last.open;
+    if (aboveAvg && up){ volScore=1; volDetail='Above average, confirming up move'; }
+    else if (aboveAvg && !up){ volScore=-1; volDetail='Above average, confirming down move'; }
+    else volDetail = 'Below average — low conviction';
+  }
+  components.push({name:'Volume', score:volScore, max:1, detail:volDetail});
+
+  let momScore = 0, momDetail = 'Momentum unavailable';
+  const momBackIdx = n-1-periods.momentum;
+  if (momBackIdx>=0){
+    const priorClose = d.candles[momBackIdx].close;
+    const pctChange = (price-priorClose)/priorClose*100;
+    if (pctChange>3){ momScore=1; momDetail=`+${pctChange.toFixed(1)}% over ${periods.momentum} bars`; }
+    else if (pctChange>0.5){ momScore=0.5; momDetail=`+${pctChange.toFixed(1)}% over ${periods.momentum} bars`; }
+    else if (pctChange<-3){ momScore=-1; momDetail=`${pctChange.toFixed(1)}% over ${periods.momentum} bars`; }
+    else if (pctChange<-0.5){ momScore=-0.5; momDetail=`${pctChange.toFixed(1)}% over ${periods.momentum} bars`; }
+    else momDetail = `${pctChange.toFixed(1)}% over ${periods.momentum} bars (flat)`;
+  }
+  components.push({name:'Momentum', score:momScore, max:1, detail:momDetail});
+
+  const patterns = detectPatterns(sym, {minConfidence:60});
+  const recentPattern = patterns.find(p => p.idx >= n-3);
+  let patScore = 0, patDetail = 'No high-confidence pattern nearby';
+  if (recentPattern){
+    const mag = Math.min(2, recentPattern.confidence/50);
+    if (recentPattern.type==='bull'){ patScore = mag; patDetail = `${recentPattern.name} (${recentPattern.confidence}%)`; }
+    else if (recentPattern.type==='bear'){ patScore = -mag; patDetail = `${recentPattern.name} (${recentPattern.confidence}%)`; }
+  }
+  components.push({name:'Pattern', score:patScore, max:2, detail:patDetail});
+
+  let breakScore = 0, breakDetail = 'No breakout';
+  const bo = periods.breakout;
+  if (n>bo+1){
+    const recentHigh = Math.max(...d.candles.slice(n-bo-1,n-1).map(c=>c.high));
+    const recentLow = Math.min(...d.candles.slice(n-bo-1,n-1).map(c=>c.low));
+    if (last.close>recentHigh){ breakScore=1; breakDetail=`Bullish breakout above ${bo}-bar high`; }
+    else if (last.close<recentLow){ breakScore=-1; breakDetail=`Bearish breakdown below ${bo}-bar low`; }
+  }
+  components.push({name:'Breakout', score:breakScore, max:1, detail:breakDetail});
+
+  const sweeps = detectLiquiditySweeps(sym);
+  const recentSweep = sweeps.find(s=>s.idx>=n-3);
+  let sweepScore=0, sweepDetail='No recent liquidity sweep';
+  if (recentSweep){
+    sweepScore = recentSweep.type==='bull' ? 1 : -1;
+    sweepDetail = recentSweep.label;
+  }
+  components.push({name:'Liquidity Sweep', score:sweepScore, max:1, detail:sweepDetail});
+
+  const htf = computeHTFDelivery(sym);
+  let htfScore=0, htfDetail='HTF unavailable';
+  if (htf){
+    htfScore = htf.bias==='Bullish'?1:htf.bias==='Bearish'?-1:0;
+    htfDetail = `${htf.bias} (${htf.zone})`;
+  }
+  components.push({name:'HTF Delivery', score:htfScore, max:1, detail:htfDetail});
+
+  const cisd = detectCISD(sym);
+  let cisdScore=0, cisdDetail='No CISD signal';
+  if (cisd){
+    cisdDetail = cisd.label;
+    if (cisd.confirmed) cisdScore = cisd.direction==='bull' ? 1 : -1;
+  }
+  components.push({name:'CISD', score:cisdScore, max:1, detail:cisdDetail});
+
+  const ich = d.ichimoku;
+  const spanA = ich.spanA[n-1], spanB = ich.spanB[n-1];
+  const tenkan = ich.tenkan[n-1], kijun = ich.kijun[n-1];
+  const tenkanP = ich.tenkan[n-2], kijunP = ich.kijun[n-2];
+  let ichScore = 0, ichDetail = 'Ichimoku unavailable (needs more history)';
+  if (spanA!=null && spanB!=null){
+    const cloudTop = Math.max(spanA,spanB), cloudBottom = Math.min(spanA,spanB);
+    const cloudBullish = spanA>spanB;
+    let posScore = 0, posLabel;
+    if (price>cloudTop){ posScore=1; posLabel='Price above cloud'; }
+    else if (price<cloudBottom){ posScore=-1; posLabel='Price below cloud'; }
+    else { posScore=0; posLabel='Price inside cloud (consolidation)'; }
+    let tkScore = 0;
+    if (tenkan!=null && kijun!=null){
+      if (tenkan>kijun) tkScore = 0.5; else if (tenkan<kijun) tkScore = -0.5;
+      if (tenkanP!=null && kijunP!=null){
+        if (tenkanP<=kijunP && tenkan>kijun) tkScore = 1;
+        else if (tenkanP>=kijunP && tenkan<kijun) tkScore = -1;
+      }
+    }
+    ichScore = Math.max(-2, Math.min(2, posScore + tkScore + (cloudBullish?0.25:-0.25)));
+    ichDetail = `${posLabel}, ${cloudBullish?'bullish':'bearish'} cloud, TK ${tenkan!=null&&kijun!=null?(tenkan>kijun?'bullish':tenkan<kijun?'bearish':'flat'):'n/a'}`;
+  }
+  components.push({name:'Ichimoku Cloud', score:ichScore, max:2, detail:ichDetail});
+
+  const sr = detectSupportResistance(sym);
+  let srScore = 0, srDetail = 'No nearby S/R zone';
+  const nearSup = sr.support.find(z => Math.abs(z.distancePct) < 2.5);
+  const nearRes = sr.resistance.find(z => Math.abs(z.distancePct) < 2.5);
+  if (nearSup && (!nearRes || Math.abs(nearSup.distancePct) < Math.abs(nearRes.distancePct))){
+    srScore = 0.5 + Math.min(0.5, nearSup.touches*0.15);
+    srDetail = `Near support ₹${nearSup.level.toFixed(2)} (${nearSup.touches} touches)`;
+  } else if (nearRes){
+    srScore = -(0.5 + Math.min(0.5, nearRes.touches*0.15));
+    srDetail = `Near resistance ₹${nearRes.level.toFixed(2)} (${nearRes.touches} touches)`;
+  }
+  components.push({name:'Support/Resistance', score:srScore, max:1, detail:srDetail});
+
+  const rawSum = components.reduce((a,c)=>a+c.score,0);
+  const maxPossible = components.reduce((a,c)=>a+c.max,0);
+  const finalScore = Math.max(0, Math.min(10, 5 + (rawSum/maxPossible)*5));
+
+  let rating, ratingIcon;
+  if (finalScore>=9){ rating='Strong Buy'; ratingIcon='🟢🟢🟢'; }
+  else if (finalScore>=7){ rating='Buy'; ratingIcon='🟢'; }
+  else if (finalScore>=5){ rating='Hold'; ratingIcon='🟡'; }
+  else if (finalScore>=3){ rating='Weak Sell'; ratingIcon='🟠'; }
+  else { rating='Strong Sell'; ratingIcon='🔴'; }
+
+  return { components, rawSum, finalScore, rating, ratingIcon };
+}
+
+// ===================== AI STRUCTURED ANALYSIS =====================
+function generateAnalysis(sym){
+  const d = getComputed(sym);
+  const { periods } = d;
+  const n = d.candles.length;
+  const last = d.candles[n-1];
+  const price = last.close;
+  const atr = d.atr[n-1] || price*0.02;
+  const signal = computeSignalScore(sym);
+  const trendComp = signal.components.find(c=>c.name==='Trend');
+  const rsiComp = signal.components.find(c=>c.name==='RSI');
+  const volComp = signal.components.find(c=>c.name==='Volume');
+  const macdComp = signal.components.find(c=>c.name==='MACD');
+
+  const trend = trendComp.detail;
+  let momentum = rsiComp.detail;
+  if (macdComp.score>0.5) momentum += ', MACD confirming strength';
+  else if (macdComp.score<-0.5) momentum += ', MACD confirming weakness';
+
+  const lookback = d.candles.slice(Math.max(0,n-periods.srLookback));
+  const support = Math.min(...lookback.map(c=>c.low));
+  const resistance = Math.max(...lookback.map(c=>c.high));
+
+  const atrPct = (atr/price)*100;
+  let volatility = 'Medium';
+  if (atrPct<1.5) volatility='Low';
+  else if (atrPct>3) volatility='High';
+
+  const volumeConfirmation = volComp.score>0 ? 'Confirmed' : volComp.score<0 ? 'Confirmed (bearish)' : 'Weak / Unconfirmed';
+
+  const strengthScore = Math.round(signal.finalScore*10);
+  const bullishProbability = Math.round(signal.finalScore*10);
+  const bearishProbability = 100-bullishProbability;
+
+  const isBuySide = signal.finalScore>=5;
+  let entry=price, stopLoss, target1, target2;
+  if (isBuySide){
+    stopLoss = Math.min(price-1.5*atr, support*0.995);
+    target1 = price+2*atr; target2 = Math.max(price+3*atr, resistance);
+  } else {
+    stopLoss = Math.max(price+1.5*atr, resistance*1.005);
+    target1 = price-2*atr; target2 = Math.min(price-3*atr, support);
+  }
+  const risk = Math.abs(entry-stopLoss) || 0.0001;
+  const reward = Math.abs(target1-entry);
+  const riskReward = reward/risk;
+
+  const reasonsFor = [], reasonsAgainst = [];
+  signal.components.forEach(c => {
+    const favorable = isBuySide ? c.score>0 : c.score<0;
+    const unfavorable = isBuySide ? c.score<0 : c.score>0;
+    if (favorable) reasonsFor.push(`${c.name}: ${c.detail}`);
+    else if (unfavorable) reasonsAgainst.push(`${c.name}: ${c.detail}`);
+  });
+  if (!reasonsFor.length) reasonsFor.push('No strong supporting factors — signal is weak/neutral.');
+  if (!reasonsAgainst.length) reasonsAgainst.push('No major contradicting factors currently.');
+
+  return {
+    trend, momentum, volatility, volumeConfirmation, atrPct,
+    support, resistance,
+    strengthScore, bullishProbability, bearishProbability,
+    action: signal.rating, entry, stopLoss, target1, target2, riskReward,
+    reasonsFor, reasonsAgainst, signal
+  };
+}
+
+// ===================== BACKTEST =====================
+function runBacktest(){
+  if (!activeSymbol) return;
+  const strategy = document.getElementById('strategySelect').value;
+  const d = getComputed(activeSymbol);
+  const { periods } = d;
+  const candles = d.candles;
+  const n = candles.length;
+  const signals = new Array(n).fill(null);
+
+  if (strategy==='ema'){
+    for (let i=1;i<n;i++){
+      if (d.ema20[i-1]==null||d.ema50[i-1]==null||d.ema20[i]==null||d.ema50[i]==null) continue;
+      if (d.ema20[i-1]<=d.ema50[i-1] && d.ema20[i]>d.ema50[i]) signals[i]='buy';
+      else if (d.ema20[i-1]>=d.ema50[i-1] && d.ema20[i]<d.ema50[i]) signals[i]='sell';
+    }
+  } else if (strategy==='rsi'){
+    for (let i=1;i<n;i++){
+      if (d.rsi[i-1]==null||d.rsi[i]==null) continue;
+      if (d.rsi[i-1]<30 && d.rsi[i]>=30) signals[i]='buy';
+      else if (d.rsi[i-1]>70 && d.rsi[i]<=70) signals[i]='sell';
+    }
+  } else if (strategy==='macd'){
+    for (let i=1;i<n;i++){
+      const m=d.macd.macdLine, s=d.macd.signalLine;
+      if (m[i-1]==null||s[i-1]==null||m[i]==null||s[i]==null) continue;
+      if (m[i-1]<=s[i-1] && m[i]>s[i]) signals[i]='buy';
+      else if (m[i-1]>=s[i-1] && m[i]<s[i]) signals[i]='sell';
+    }
+  } else if (strategy==='breakout'){
+    const bo = periods.breakout;
+    for (let i=bo+1;i<n;i++){
+      const hi = Math.max(...candles.slice(i-bo,i).map(c=>c.high));
+      const lo = Math.min(...candles.slice(i-bo,i).map(c=>c.low));
+      if (candles[i].close>hi) signals[i]='buy';
+      else if (candles[i].close<lo) signals[i]='sell';
+    }
+  }
+
+  let state='flat', entryPrice=0, entryIdx=0, stopLoss=0, target=0, qty=0;
+  let equity=100000; const startCapital=equity;
+  const equityCurve=[]; const trades=[];
+  let peak=equity, maxDD=0;
+  const warmup = Math.min(25, Math.max(5, Math.floor(n*0.1)));
+
+  for (let i=warmup;i<n;i++){
+    if (state==='flat' && signals[i]==='buy'){
+      entryPrice = candles[i].close; entryIdx=i;
+      const atrE = d.atr[i] || entryPrice*0.02;
+      stopLoss = entryPrice-1.5*atrE; target = entryPrice+3*atrE;
+      qty = equity/entryPrice; state='long';
+    } else if (state==='long' && i>entryIdx){
+      let exitPrice=null, reason=null;
+      if (candles[i].low<=stopLoss){ exitPrice=stopLoss; reason='Stop Loss'; }
+      else if (candles[i].high>=target){ exitPrice=target; reason='Target Hit'; }
+      else if (signals[i]==='sell'){ exitPrice=candles[i].close; reason='Signal Reversal'; }
+      if (exitPrice!=null){
+        const pnlPct = (exitPrice-entryPrice)/entryPrice*100;
+        equity = qty*exitPrice;
+        trades.push({entryDate:candles[entryIdx].date, entryPrice, exitDate:candles[i].date, exitPrice, pnlPct, reason});
+        state='flat';
+      }
+    }
+    const markEquity = state==='long' ? qty*candles[i].close : equity;
+    peak = Math.max(peak, markEquity);
+    maxDD = Math.max(maxDD, (peak-markEquity)/peak*100);
+    equityCurve.push({date:candles[i].date, equity:markEquity});
+  }
+  if (state==='long'){
+    const last=candles[n-1];
+    trades.push({entryDate:candles[entryIdx].date, entryPrice, exitDate:last.date, exitPrice:last.close, pnlPct:(last.close-entryPrice)/entryPrice*100, reason:'Open (unrealized)'});
+  }
+
+  const closed = trades.filter(t=>t.reason!=='Open (unrealized)');
+  const wins = closed.filter(t=>t.pnlPct>0).length;
+  const winRate = closed.length ? (wins/closed.length*100) : 0;
+  const finalEquity = equityCurve.length ? equityCurve[equityCurve.length-1].equity : startCapital;
+  const totalReturn = (finalEquity-startCapital)/startCapital*100;
+  const avgReturn = closed.length ? closed.reduce((a,t)=>a+t.pnlPct,0)/closed.length : 0;
+
+  renderBacktest({trades, equityCurve, stats:{totalTrades:closed.length, winRate, totalReturn, avgReturn, maxDD, finalEquity}});
+}
+
+function renderBacktest(result){
+  const box = document.getElementById('backtestResults');
+  const s = result.stats;
+  const retClass = s.totalReturn>=0?'pos':'neg';
+  box.innerHTML = `
+    <div class="grid2">
+      <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-val">${s.totalTrades}</div></div>
+      <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-val">${s.winRate.toFixed(1)}%</div></div>
+      <div class="stat-card"><div class="stat-label">Total Return</div><div class="stat-val ${retClass}">${s.totalReturn>=0?'+':''}${s.totalReturn.toFixed(2)}%</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Return / Trade</div><div class="stat-val">${s.avgReturn.toFixed(2)}%</div></div>
+      <div class="stat-card"><div class="stat-label">Max Drawdown</div><div class="stat-val neg">${s.maxDD.toFixed(2)}%</div></div>
+      <div class="stat-card"><div class="stat-label">Final Equity (from ₹1,00,000)</div><div class="stat-val">₹${Math.round(s.finalEquity).toLocaleString('en-IN')}</div></div>
+    </div>
+    <canvas id="equityChart" height="120" style="margin-top:12px"></canvas>
+    <div class="table-wrap" style="margin-top:12px">
+      <table><thead><tr><th>Entry</th><th>Entry ₹</th><th>Exit</th><th>Exit ₹</th><th>PnL%</th><th>Reason</th></tr></thead>
+      <tbody>${result.trades.slice(-25).reverse().map(t=>`<tr><td>${t.entryDate.toLocaleDateString('en-IN')}</td><td>${t.entryPrice.toFixed(2)}</td><td>${t.exitDate.toLocaleDateString('en-IN')}</td><td>${t.exitPrice.toFixed(2)}</td><td class="${t.pnlPct>=0?'pos':'neg'}">${t.pnlPct>=0?'+':''}${t.pnlPct.toFixed(2)}%</td><td>${t.reason}</td></tr>`).join('')}</tbody></table>
+    </div>`;
+  plotLine(document.getElementById('equityChart'), [{data:result.equityCurve.map(e=>e.equity), color:'#00e5ff'}], {hLines:[]});
+}
+
+// ===================== CANVAS DRAWING =====================
+function fitCanvas(canvas){
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const cssH = canvas.height;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx, w:cssW, h:cssH};
+}
+
+function drawMainChart(sym){
+  const canvas = document.getElementById('mainChart');
+  const {ctx,w,h} = fitCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  const d = getComputed(sym);
+  const lookback = Math.min(+document.getElementById('lookbackSelect').value, d.candles.length);
+  const start = d.candles.length - lookback;
+  const candles = d.candles.slice(start);
+  const idxOffset = start;
+
+  let lo = Math.min(...candles.map(c=>c.low)), hi = Math.max(...candles.map(c=>c.high));
+  if (overlays.bb){ const bu=d.bbUpper.slice(start).filter(v=>v!=null); const bl=d.bbLower.slice(start).filter(v=>v!=null); if(bu.length){hi=Math.max(hi,...bu);} if(bl.length){lo=Math.min(lo,...bl);} }
+  if (overlays.ichimoku){
+    const sa=d.ichimoku.spanA.slice(start).filter(v=>v!=null), sb=d.ichimoku.spanB.slice(start).filter(v=>v!=null);
+    if (sa.length){ hi=Math.max(hi,...sa); lo=Math.min(lo,...sa); }
+    if (sb.length){ hi=Math.max(hi,...sb); lo=Math.min(lo,...sb); }
+  }
+  const pad = (hi-lo)*0.08 || hi*0.01;
+  lo -= pad; hi += pad;
+
+  const padL=54, padR=10, padT=10, padB=20;
+  const plotW = w-padL-padR, plotH = h-padT-padB;
+  const xAt = i => padL + (i/(candles.length-1||1))*plotW;
+  const yAt = p => padT + (1-(p-lo)/(hi-lo))*plotH;
+
+  ctx.strokeStyle='#1a3048'; ctx.lineWidth=1; ctx.font='10px JetBrains Mono'; ctx.fillStyle='#6a8fa8';
+  for (let g=0;g<=4;g++){
+    const yy = padT+g*plotH/4, val = hi-g*(hi-lo)/4;
+    ctx.beginPath(); ctx.moveTo(padL,yy); ctx.lineTo(w-padR,yy); ctx.stroke();
+    ctx.fillText(val.toFixed(val<10?4:1), w-padR+2>w-40?w-46:w-46, yy+3);
+  }
+
+  if (overlays.ichimoku){
+    for (let i=0;i<candles.length-1;i++){
+      const a1=d.ichimoku.spanA[idxOffset+i], b1=d.ichimoku.spanB[idxOffset+i];
+      const a2=d.ichimoku.spanA[idxOffset+i+1], b2=d.ichimoku.spanB[idxOffset+i+1];
+      if (a1==null||b1==null||a2==null||b2==null) continue;
+      const bullish = a1>=b1;
+      ctx.fillStyle = bullish ? 'rgba(0,230,118,0.14)' : 'rgba(255,61,87,0.14)';
+      ctx.beginPath();
+      ctx.moveTo(xAt(i), yAt(a1));
+      ctx.lineTo(xAt(i+1), yAt(a2));
+      ctx.lineTo(xAt(i+1), yAt(b2));
+      ctx.lineTo(xAt(i), yAt(b1));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  if (overlays.sr){
+    const sr = detectSupportResistance(sym);
+    ctx.setLineDash([5,4]); ctx.lineWidth=1;
+    sr.resistance.forEach(z=>{
+      ctx.strokeStyle='rgba(255,61,87,0.55)';
+      ctx.beginPath(); ctx.moveTo(padL,yAt(z.level)); ctx.lineTo(w-padR,yAt(z.level)); ctx.stroke();
+    });
+    sr.support.forEach(z=>{
+      ctx.strokeStyle='rgba(0,230,118,0.55)';
+      ctx.beginPath(); ctx.moveTo(padL,yAt(z.level)); ctx.lineTo(w-padR,yAt(z.level)); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  }
+
+  const bw = Math.max(1, plotW/candles.length*0.65);
+  if (chartType==='candle'){
+    candles.forEach((c,i) => {
+      const x = xAt(i); const up = c.close>=c.open;
+      ctx.strokeStyle = up?'#00e676':'#ff3d57';
+      ctx.beginPath(); ctx.moveTo(x,yAt(c.high)); ctx.lineTo(x,yAt(c.low)); ctx.stroke();
+      ctx.fillStyle = up?'#00e676':'#ff3d57';
+      const yO=yAt(c.open), yC=yAt(c.close);
+      ctx.fillRect(x-bw/2, Math.min(yO,yC), bw, Math.max(1,Math.abs(yC-yO)));
+    });
+  } else {
+    ctx.strokeStyle='#00e5ff'; ctx.lineWidth=1.5; ctx.beginPath();
+    candles.forEach((c,i)=>{ const x=xAt(i), y=yAt(c.close); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.stroke();
+  }
+
+  function overlayLine(arr, color){
+    ctx.strokeStyle=color; ctx.lineWidth=1.3; ctx.beginPath(); let started=false;
+    for (let i=0;i<candles.length;i++){
+      const v = arr[idxOffset+i]; if (v==null) continue;
+      const x=xAt(i), y=yAt(v);
+      if (!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+  if (overlays.ema20) overlayLine(d.ema20, '#ffca28');
+  if (overlays.ema50) overlayLine(d.ema50, '#7b2fff');
+  if (overlays.ema200) overlayLine(d.ema200, '#ff8a00');
+  if (overlays.bb){ overlayLine(d.bbUpper, 'rgba(0,229,255,0.5)'); overlayLine(d.bbLower, 'rgba(0,229,255,0.5)'); }
+  if (overlays.vwap) overlayLine(d.vwap, '#ffffff');
+  if (overlays.ichimoku){ overlayLine(d.ichimoku.tenkan, '#ff5c8a'); overlayLine(d.ichimoku.kijun, '#4fc3f7'); }
+
+  ctx.fillStyle='#6a8fa8'; ctx.font='9px JetBrains Mono';
+  const labelStep = Math.max(1, Math.floor(candles.length/5));
+  candles.forEach((c,i)=>{ if (i%labelStep===0) ctx.fillText(c.date.toLocaleDateString('en-IN',{month:'short',day:'numeric'}), xAt(i)-14, h-4); });
+
+  const vCanvas = document.getElementById('volChart');
+  const {ctx:vctx, w:vw, h:vh} = fitCanvas(vCanvas);
+  vctx.clearRect(0,0,vw,vh);
+  const maxVol = Math.max(...candles.map(c=>c.volume),1);
+  const vPadL=54, vPadR=10;
+  const vPlotW = vw-vPadL-vPadR;
+  candles.forEach((c,i)=>{
+    const x = vPadL + (i/(candles.length-1||1))*vPlotW;
+    const bh = (c.volume/maxVol)*(vh-4);
+    vctx.fillStyle = c.close>=c.open ? 'rgba(0,230,118,0.5)':'rgba(255,61,87,0.5)';
+    vctx.fillRect(x-bw/2, vh-bh, bw, bh);
+  });
+  vctx.strokeStyle = '#ffffff'; vctx.lineWidth = 1.2; vctx.beginPath(); let started=false;
+  for (let i=0;i<candles.length;i++){
+    const v = d.volMA[idxOffset+i]; if (v==null) continue;
+    const x = vPadL + (i/(candles.length-1||1))*vPlotW;
+    const y = vh - (v/maxVol)*(vh-4);
+    if (!started){ vctx.moveTo(x,y); started=true; } else vctx.lineTo(x,y);
+  }
+  vctx.stroke();
+}
+
+function plotLine(canvas, series, opts){
+  opts = opts||{};
+  const {ctx,w,h} = fitCanvas(canvas);
+  ctx.clearRect(0,0,w,h);
+  const all = series.flatMap(s=>s.data.filter(v=>v!=null));
+  const hVals = (opts.hLines||[]).map(l=>l.value);
+  let lo = Math.min(...all,...hVals), hi = Math.max(...all,...hVals);
+  if (!isFinite(lo)||!isFinite(hi)) return;
+  const pad=(hi-lo)*0.1||1; lo-=pad; hi+=pad;
+  const padL=44,padR=8,padT=8,padB=14;
+  const plotW=w-padL-padR, plotH=h-padT-padB;
+  const n = series[0].data.length;
+  const xAt = i => padL+(i/(n-1||1))*plotW;
+  const yAt = v => padT+(1-(v-lo)/(hi-lo))*plotH;
+
+  ctx.strokeStyle='#1a3048'; ctx.font='9px JetBrains Mono'; ctx.fillStyle='#6a8fa8';
+  for (let g=0;g<=3;g++){ const yy=padT+g*plotH/3, val=hi-g*(hi-lo)/3; ctx.beginPath();ctx.moveTo(padL,yy);ctx.lineTo(w-padR,yy);ctx.stroke(); ctx.fillText(val.toFixed(1), 2, yy+3); }
+
+  (opts.hLines||[]).forEach(l=>{
+    ctx.strokeStyle = l.color||'#6a8fa8'; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(padL,yAt(l.value)); ctx.lineTo(w-padR,yAt(l.value)); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  if (opts.histogram){
+    const bw = Math.max(1, plotW/n*0.6);
+    opts.histogram.data.forEach((v,i)=>{ if(v==null) return; const x=xAt(i); const y0=yAt(0), y1=yAt(v);
+      ctx.fillStyle = v>=0?'rgba(0,230,118,0.5)':'rgba(255,61,87,0.5)';
+      ctx.fillRect(x-bw/2, Math.min(y0,y1), bw, Math.max(1,Math.abs(y1-y0)));
+    });
+  }
+  series.forEach(s=>{
+    ctx.strokeStyle=s.color; ctx.lineWidth=1.4; ctx.beginPath(); let started=false;
+    s.data.forEach((v,i)=>{ if(v==null) return; const x=xAt(i),y=yAt(v); if(!started){ctx.moveTo(x,y);started=true;} else ctx.lineTo(x,y); });
+    ctx.stroke();
+  });
+}
+
+function drawIndicatorChart(sym){
+  const d = getComputed(sym);
+  const lookback = Math.min(+document.getElementById('lookbackSelect').value, d.candles.length);
+  const start = d.candles.length-lookback;
+  const canvas = document.getElementById('indChart');
+  if (indTab==='rsi'){
+    plotLine(canvas, [{data:d.rsi.slice(start), color:'#00e5ff'}], {hLines:[{value:70,color:'#ff3d57'},{value:30,color:'#00e676'}]});
+  } else if (indTab==='macd'){
+    plotLine(canvas, [{data:d.macd.macdLine.slice(start), color:'#00e5ff'},{data:d.macd.signalLine.slice(start), color:'#ff8a00'}], {histogram:{data:d.macd.hist.slice(start)}, hLines:[{value:0,color:'#6a8fa8'}]});
+  } else if (indTab==='atr'){
+    plotLine(canvas, [{data:d.atr.slice(start), color:'#7b2fff'}], {hLines:[]});
+  } else if (indTab==='obv'){
+    plotLine(canvas, [{data:d.obv.slice(start), color:'#00e5ff'}], {hLines:[]});
+  } else if (indTab==='cmf'){
+    plotLine(canvas, [{data:d.cmf.slice(start), color:'#ffca28'}], {hLines:[{value:0,color:'#6a8fa8'}]});
+  } else if (indTab==='mfi'){
+    plotLine(canvas, [{data:d.mfi.slice(start), color:'#ff8a00'}], {hLines:[{value:80,color:'#ff3d57'},{value:20,color:'#00e676'}]});
+  }
+}
+
+// ===================== RENDER PANELS =====================
+function renderPatterns(sym){
+  const patterns = detectPatterns(sym);
+  const box = document.getElementById('patternsBox');
+  if (!patterns.length){ box.innerHTML = '<div style="color:var(--text2);font-size:12px">No high-confidence patterns detected in recent candles. Filters (trend, volume, ATR, RSI, MACD, S/R) removed the weaker/false-positive signals.</div>'; return; }
+  box.innerHTML = patterns.map(p => {
+    const barColor = p.type==='bull' ? 'var(--green)' : p.type==='bear' ? 'var(--red)' : 'var(--yellow)';
+    const starsFilled = '★'.repeat(p.stars);
+    const starsEmpty = '★'.repeat(5-p.stars);
+    return `
+    <div class="pattern-card ${p.type}">
+      <div class="pattern-card-head">
+        <span class="pattern-card-title">${p.type==='bull'?'▲':p.type==='bear'?'▼':'●'} ${p.name}</span>
+        <span class="pattern-card-date">${p.date.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+      </div>
+      <div class="confidence-row">
+        <span style="font-size:11px;color:var(--text2)">Confidence</span>
+        <div class="confidence-bar-track"><div class="confidence-bar-fill" style="width:${p.confidence}%;background:${barColor}"></div></div>
+        <span class="confidence-pct" style="color:${barColor}">${p.confidence}%</span>
+      </div>
+      <div class="checklist">
+        ${p.checks.map(chk => `<span class="check-item ${chk.pass?'pass':'fail'}">${chk.pass?'✔':'✕'} ${chk.label}</span>`).join('')}
+      </div>
+      <div class="stars"><span class="filled">${starsFilled}</span>${starsEmpty}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderSMC(sym){
+  const box = document.getElementById('smcBox');
+  const d = getComputed(sym);
+  if (d.candles.length < 15){
+    box.innerHTML = '<div class="smc-empty">Need at least 15 candles for SMC/ICT detection — load more history.</div>';
+    return;
+  }
+  const sweeps = detectLiquiditySweeps(sym);
+  const htf = computeHTFDelivery(sym);
+  const fvgs = detectFVGs(sym).filter(f=>!f.filled).sort((a,b)=>b.idx-a.idx).slice(0,6);
+  const ifvgs = detectInverseFVGs(sym);
+  const cisd = detectCISD(sym);
+
+  let html = '';
+
+  if (htf){
+    const cls = htf.bias==='Bullish'?'bull':htf.bias==='Bearish'?'bear':'neu';
+    const biasColor = htf.bias==='Bullish'?'var(--green)':htf.bias==='Bearish'?'var(--red)':'var(--yellow)';
+    html += `<div class="pattern-card ${cls}">
+      <div class="pattern-card-head"><span class="pattern-card-title">HTF Delivery (${htf.factor}-bar blocks)</span></div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px">${htf.biasDetail}</div>
+      <div class="checklist">
+        <span class="check-item pass" style="color:${biasColor}">Bias: ${htf.bias}</span>
+        <span class="check-item pass">Zone: ${htf.zone}</span>
+        <span class="check-item pass">Range: ₹${htf.rangeLow.toFixed(2)} – ₹${htf.rangeHigh.toFixed(2)}</span>
+      </div>
+    </div>`;
+  }
+
+  if (cisd){
+    const cls = cisd.confirmed ? (cisd.direction==='bull'?'bull':'bear') : 'neu';
+    html += `<div class="pattern-card ${cls}">
+      <div class="pattern-card-head"><span class="pattern-card-title">CISD ${cisd.confirmed?'✔ Confirmed':'⏳ Pending'}</span></div>
+      <div style="font-size:12px;color:var(--text2)">${cisd.label} · leg length ${cisd.runLength} candle(s)</div>
+    </div>`;
+  }
+
+  html += `<div class="smc-subhead">Liquidity Sweeps</div>`;
+  if (sweeps.length){
+    html += sweeps.map(s=>`
+      <div class="pattern-card ${s.type}">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">${s.type==='bull'?'▲':'▼'} Liquidity Sweep</span>
+          <span class="pattern-card-date">${s.date.toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2)">${s.label} at ₹${s.level.toFixed(2)}</div>
+      </div>`).join('');
+  } else {
+    html += `<div class="smc-empty">No recent liquidity sweeps detected.</div>`;
+  }
+
+  html += `<div class="smc-subhead">Open Fair Value Gaps</div>`;
+  if (fvgs.length){
+    html += `<div>${fvgs.map(f=>`<span class="pattern-badge ${f.type}">${f.type==='bull'?'▲':'▼'} ₹${f.bottom.toFixed(2)}–₹${f.top.toFixed(2)} (${f.date.toLocaleDateString('en-IN',{day:'numeric',month:'short'})})</span>`).join('')}</div>`;
+  } else {
+    html += `<div class="smc-empty">No unfilled FVGs in the recent range.</div>`;
+  }
+
+  html += `<div class="smc-subhead">Inverse FVGs (iFVG)</div>`;
+  if (ifvgs.length){
+    html += `<div>${ifvgs.map(f=>`<span class="pattern-badge ${f.type}">${f.type==='bull'?'▲':'▼'} ${f.label} (₹${f.zoneBottom.toFixed(2)}–₹${f.zoneTop.toFixed(2)})</span>`).join('')}</div>`;
+  } else {
+    html += `<div class="smc-empty">No filled/inversed FVGs found yet.</div>`;
+  }
+
+  box.innerHTML = html;
+}
+
+function renderSR(sym){
+  const box = document.getElementById('srBox');
+  const d = getComputed(sym);
+  if (d.candles.length < 10){
+    box.innerHTML = '<div class="smc-empty">Need at least 10 candles to map support/resistance zones.</div>';
+    return;
+  }
+  const sr = detectSupportResistance(sym);
+  let html = `<div class="smc-subhead">Resistance (above price)</div>`;
+  if (sr.resistance.length){
+    html += sr.resistance.slice().reverse().map(z => `
+      <div class="pattern-card bear">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">▼ ₹${z.level.toFixed(2)}</span>
+          <span class="pattern-card-date">+${z.distancePct.toFixed(1)}% away</span>
+        </div>
+        <div class="checklist"><span class="check-item pass">Touched ${z.touches}×</span></div>
+      </div>`).join('');
+  } else {
+    html += `<div class="smc-empty">No clear resistance zone found above current price yet.</div>`;
+  }
+  html += `<div class="smc-subhead">Support (below price)</div>`;
+  if (sr.support.length){
+    html += sr.support.map(z => `
+      <div class="pattern-card bull">
+        <div class="pattern-card-head">
+          <span class="pattern-card-title">▲ ₹${z.level.toFixed(2)}</span>
+          <span class="pattern-card-date">${z.distancePct.toFixed(1)}% away</span>
+        </div>
+        <div class="checklist"><span class="check-item pass">Touched ${z.touches}×</span></div>
+      </div>`).join('');
+  } else {
+    html += `<div class="smc-empty">No clear support zone found below current price yet.</div>`;
+  }
+  box.innerHTML = html;
+}
+
+function renderScore(sym){
+  const s = computeSignalScore(sym);
+  const box = document.getElementById('scoreBox');
+  const pct = (s.finalScore/10)*100;
+  const color = s.finalScore>=9?'#00e676':s.finalScore>=7?'#8bd450':s.finalScore>=5?'#ffca28':s.finalScore>=3?'#ff8a00':'#ff3d57';
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div class="rating-badge" style="color:${color}">${s.ratingIcon} ${s.rating}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:${color}">${s.finalScore.toFixed(1)} / 10</div>
+    </div>
+    <div class="score-scale"><span>0 Strong Sell</span><span>5 Hold</span><span>10 Strong Buy</span></div>
+    <div class="score-meter"><div class="score-marker" style="left:calc(${pct}% - 1.5px)"></div></div>
+    <table style="width:100%;margin-top:14px">
+      <thead><tr><th>Indicator</th><th>Detail</th><th style="text-align:right">Score</th></tr></thead>
+      <tbody>
+        ${s.components.map(c=>`<tr><td>${c.name}</td><td style="color:var(--text2)">${c.detail}</td><td style="text-align:right" class="${c.score>0?'pos':c.score<0?'neg':''}">${c.score>0?'+':''}${c.score}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderAnalysis(sym){
+  const a = generateAnalysis(sym);
+  const box = document.getElementById('analysisBox');
+  box.innerHTML = `
+    <div class="analysis-line"><span class="analysis-label">Overall Trend</span><span class="analysis-val" style="color:${a.trend.includes('Bull')?'#00e676':a.trend.includes('Bear')?'#ff3d57':'#ffca28'}">${a.trend}</span></div>
+    <div class="analysis-line"><span class="analysis-label">Momentum</span><span class="analysis-val">${a.momentum}</span></div>
+    <div class="analysis-line"><span class="analysis-label">Volatility (ATR ${a.atrPct.toFixed(1)}%)</span><span class="analysis-val" style="color:${a.volatility==='Low'?'#00e676':a.volatility==='High'?'#ff3d57':'#ffca28'}">${a.volatility}</span></div>
+    <div class="analysis-line"><span class="analysis-label">Volume Confirmation</span><span class="analysis-val">${a.volumeConfirmation}</span></div>
+    <div class="analysis-line"><span class="analysis-label">Strength Score</span><span class="analysis-val">${a.strengthScore} / 100</span></div>
+    <div class="analysis-line"><span class="analysis-label">Support / Resistance</span><span class="analysis-val">₹${a.support.toFixed(2)} · ₹${a.resistance.toFixed(2)}</span></div>
+  `;
+  const prob = document.createElement('div');
+  prob.innerHTML = `
+    <div class="prob-bar-row"><span class="prob-label">Bullish</span><div class="prob-track"><div class="prob-fill" style="width:${a.bullishProbability}%;background:var(--green)"></div></div><span style="font-size:11px;width:34px;text-align:right">${a.bullishProbability}%</span></div>
+    <div class="prob-bar-row"><span class="prob-label">Bearish</span><div class="prob-track"><div class="prob-fill" style="width:${a.bearishProbability}%;background:var(--red)"></div></div><span style="font-size:11px;width:34px;text-align:right">${a.bearishProbability}%</span></div>
+  `;
+  box.appendChild(prob);
+
+  const sigBox = document.getElementById('signalBox');
+  const cls = a.signal.finalScore>=7?'buy':a.signal.finalScore>=5?'hold':'sell';
+  const icon = a.signal.finalScore>=7?'📈':a.signal.finalScore>=5?'⏳':'📉';
+  sigBox.innerHTML = `
+    <div class="signal-box ${cls}">
+      <div class="signal-icon">${icon}</div>
+      <div style="flex:1">
+        <div class="signal-title">${a.action}</div>
+        <div class="signal-meta">Risk/Reward ≈ 1:${a.riskReward.toFixed(2)}</div>
+        <div class="grid2" style="margin-top:10px">
+          <div class="stat-card"><div class="stat-label">Entry Zone</div><div class="stat-val">₹${a.entry.toFixed(2)}</div></div>
+          <div class="stat-card"><div class="stat-label">Stop Loss</div><div class="stat-val neg">₹${a.stopLoss.toFixed(2)}</div></div>
+          <div class="stat-card"><div class="stat-label">Target 1</div><div class="stat-val pos">₹${a.target1.toFixed(2)}</div></div>
+          <div class="stat-card"><div class="stat-label">Target 2</div><div class="stat-val pos">₹${a.target2.toFixed(2)}</div></div>
+        </div>
+      </div>
+    </div>`;
+
+  const reasonsBox = document.getElementById('reasonsBox');
+  reasonsBox.innerHTML = `
+    <div class="reasons-grid">
+      <div class="reasons-col support"><h4>Reasons Supporting</h4><ul>${a.reasonsFor.map(r=>`<li>${r}</li>`).join('')}</ul></div>
+      <div class="reasons-col against"><h4>Reasons Against</h4><ul>${a.reasonsAgainst.map(r=>`<li>${r}</li>`).join('')}</ul></div>
+    </div>`;
+}
+
+function renderTable(sym){
+  const candles = dataset[sym].slice(-100).reverse();
+  document.getElementById('ohlcvTable').innerHTML = candles.map(c=>`
+    <tr><td>${c.date.toLocaleDateString('en-IN')}</td><td>${c.open.toFixed(2)}</td><td>${c.high.toFixed(2)}</td><td>${c.low.toFixed(2)}</td><td>${c.close.toFixed(2)}</td><td>${c.volume.toLocaleString('en-IN')}</td></tr>
+  `).join('');
+}
+
+function renderDataStatus(sym){
+  const d = getComputed(sym);
+  const { periods, candles } = d;
+  const detected = timeframeOverride || detectTimeframe(candles);
+  const box = document.getElementById('dataStatusBox');
+  let html = `${candles.length} candles loaded · Detected timeframe: <strong style="color:#fff">${detected}</strong>`;
+  if (periods.limited){
+    html += `<br><span class="warn">⚠ Limited data — indicator periods auto-adjusted to fit (EMA ${periods.ema20}/${periods.ema50}${periods.ema200?'/'+periods.ema200:' — long EMA disabled'}, RSI ${periods.rsi}, ATR ${periods.atr}, MACD ${periods.macdFast}/${periods.macdSlow}/${periods.macdSignal}). Buy/Sell signals will still be produced, but with fewer candles behind them — more history improves reliability.</span>`;
+  } else {
+    html += ` · Standard periods in use (EMA 20/50/200 etc.) — plenty of history for full-strength signals.`;
+  }
+  box.innerHTML = html;
+}
+
+function draw(){
+  if (!activeSymbol || !dataset[activeSymbol]) return;
+  const candles = dataset[activeSymbol];
+  const last = candles[candles.length-1];
+  const prev = candles[candles.length-2] || last;
+  const chg = last.close-prev.close;
+  const chgPct = prev.close ? (chg/prev.close*100) : 0;
+  document.getElementById('chartSymbolLabel').textContent = `${activeSymbol} · ${candles.length} candles`;
+  document.getElementById('chartPrice').textContent = '₹'+last.close.toFixed(2);
+  const chEl = document.getElementById('chartChange');
+  chEl.textContent = `${chg>=0?'+':''}${chg.toFixed(2)} (${chg>=0?'+':''}${chgPct.toFixed(2)}%)`;
+  chEl.className = 'price-chg '+(chg>=0?'pos':'neg');
+
+  const d = getComputed(activeSymbol);
+  const { periods } = d;
+  document.getElementById('p_ema20').textContent = periods.ema20;
+  document.getElementById('p_ema50').textContent = periods.ema50;
+  document.getElementById('p_ema200').textContent = periods.ema200 ?? '—';
+  document.getElementById('p_rsi').textContent = periods.rsi;
+  document.getElementById('p_atr').textContent = periods.atr;
+  document.getElementById('p_cmf').textContent = periods.cmf;
+  document.getElementById('p_mfi').textContent = periods.mfi;
+
+  renderDataStatus(activeSymbol);
+  drawMainChart(activeSymbol);
+  drawIndicatorChart(activeSymbol);
+  renderPatterns(activeSymbol);
+  renderSR(activeSymbol);
+  renderSMC(activeSymbol);
+  renderScore(activeSymbol);
+  renderAnalysis(activeSymbol);
+  renderTable(activeSymbol);
+}
+
+window.addEventListener('resize', () => { if (activeSymbol) draw(); });
+</script>
+</body>
+</html>
