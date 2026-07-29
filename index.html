@@ -238,6 +238,12 @@
     </div>
 
     <div class="panel">
+      <div class="panel-title">Volume Analysis</div>
+      <div id="volInsightsBox"></div>
+      <p class="disclaimer" style="margin-top:10px">Reads volume spikes, dry-ups, climax exhaustion, and OBV divergence — a context layer alongside the Volume row in the Weighted Signal Score below.</p>
+    </div>
+
+    <div class="panel">
       <div class="panel-title">Detected Patterns</div>
       <div id="patternsBox"></div>
     </div>
@@ -882,6 +888,86 @@ function getComputed(sym){
   return result;
 }
 
+// ===================== VOLUME ANALYSIS (SPIKES, DRY-UPS, CLIMAX, OBV DIVERGENCE) =====================
+// Reads the volume data already computed in getComputed() and turns it into
+// plain-language suggestions: spike/dry-up detection vs the volume moving
+// average, climax-volume exhaustion warnings after a strong run, and
+// price-vs-OBV divergence checks. Purely informational — feeds context
+// alongside (not instead of) the Volume row in the Weighted Signal Score.
+function computeVolumeSignals(sym){
+  const d = getComputed(sym);
+  const { candles, volMA, obv } = d;
+  const n = candles.length;
+  if (n < 10) return null;
+
+  const last = candles[n-1];
+  const avgVol = volMA[n-1];
+  const up = last.close >= last.open;
+  const signals = [];
+  let ratio = null;
+
+  if (avgVol){
+    ratio = last.volume / avgVol;
+    if (ratio >= 3){
+      signals.push({ type: up?'bull':'bear', title:'Extreme Volume Spike',
+        detail:`${ratio.toFixed(1)}x average volume on a ${up?'green':'red'} candle — ${up?'strong buying pressure, likely institutional accumulation':'strong selling pressure, likely institutional distribution'}.` });
+    } else if (ratio >= 2){
+      signals.push({ type: up?'bull':'bear', title:'Strong Volume Spike',
+        detail:`${ratio.toFixed(1)}x average volume — confirms the ${up?'bullish':'bearish'} move with real participation.` });
+    } else if (ratio >= 1.5){
+      signals.push({ type: up?'bull':'bear', title:'Volume Spike',
+        detail:`${ratio.toFixed(1)}x average volume — the ${up?'bullish':'bearish'} move is gaining conviction.` });
+    } else if (ratio <= 0.5){
+      signals.push({ type:'neu', title:'Volume Dry-Up',
+        detail:`Only ${ratio.toFixed(1)}x average volume — low conviction right now. Dry-ups near support/resistance often precede a breakout once volume returns.` });
+    }
+
+    if (ratio >= 2.5){
+      const lookback = Math.min(6, n-1);
+      const priorClose = candles[n-1-lookback].close;
+      const trendPct = ((last.close - priorClose) / priorClose) * 100;
+      if (Math.abs(trendPct) > 4){
+        const trendUp = trendPct > 0;
+        signals.push({ type: trendUp?'bear':'bull', title:'Possible Climax Volume',
+          detail:`Extreme volume after a ${Math.abs(trendPct).toFixed(1)}% ${trendUp?'rally':'decline'} over the last ${lookback} candles — this can mark exhaustion rather than continuation. Watch for a reversal.` });
+      }
+    }
+  }
+
+  const divWin = Math.min(15, n-1);
+  const obvStart = obv[n-1-divWin], obvEnd = obv[n-1];
+  const priceStart = candles[n-1-divWin].close, priceEnd = last.close;
+  if (obvStart != null && obvEnd != null){
+    const priceUp = priceEnd > priceStart, priceDown = priceEnd < priceStart;
+    const obvUp = obvEnd > obvStart, obvDown = obvEnd < obvStart;
+    if (priceUp && obvDown){
+      signals.push({ type:'bear', title:'Bearish OBV Divergence',
+        detail:`Price is higher over the last ${divWin} candles, but On-Balance Volume is falling — smart money isn't confirming this move.` });
+    } else if (priceDown && obvUp){
+      signals.push({ type:'bull', title:'Bullish OBV Divergence',
+        detail:`Price is lower over the last ${divWin} candles, but On-Balance Volume is rising — possible quiet accumulation beneath the surface.` });
+    }
+  }
+
+  if (!signals.length){
+    signals.push({ type:'neu', title:'Normal Volume',
+      detail: ratio!=null ? `Volume is near its ${d.periods.vol}-period average (${ratio.toFixed(1)}x) — no unusual activity right now.` : 'Not enough history yet to compute an average volume baseline.' });
+  }
+
+  return { ratio, signals };
+}
+
+function renderVolumeInsights(sym){
+  const box = document.getElementById('volInsightsBox');
+  const v = computeVolumeSignals(sym);
+  if (!v){ box.innerHTML = '<div class="smc-empty">Need at least 10 candles for volume spike/divergence analysis.</div>'; return; }
+  box.innerHTML = v.signals.map(s => `
+    <div class="pattern-card ${s.type}">
+      <div class="pattern-card-head"><span class="pattern-card-title">${s.type==='bull'?'▲':s.type==='bear'?'▼':'●'} ${s.title}</span></div>
+      <div style="font-size:12px;color:var(--text2)">${s.detail}</div>
+    </div>`).join('');
+}
+
 // ===================== PATTERN DETECTION =====================
 function scanRawPatterns(sym){
   const d = getComputed(sym);
@@ -1410,11 +1496,12 @@ function computeSignalScore(sym){
 
   let volScore = 0, volDetail = 'Volume unavailable';
   if (avgVol){
+    const ratio = last.volume / avgVol;
     const aboveAvg = last.volume > avgVol;
     const up = last.close >= last.open;
-    if (aboveAvg && up){ volScore=1; volDetail='Above average, confirming up move'; }
-    else if (aboveAvg && !up){ volScore=-1; volDetail='Above average, confirming down move'; }
-    else volDetail = 'Below average — low conviction';
+    if (aboveAvg && up){ volScore=1; volDetail=`${ratio.toFixed(1)}x average, confirming up move`; }
+    else if (aboveAvg && !up){ volScore=-1; volDetail=`${ratio.toFixed(1)}x average, confirming down move`; }
+    else volDetail = `${ratio.toFixed(1)}x average — low conviction`;
   }
   components.push({name:'Volume', score:volScore, max:1, detail:volDetail});
 
@@ -2132,6 +2219,7 @@ function draw(){
   renderDataStatus(activeSymbol);
   drawMainChart(activeSymbol);
   drawIndicatorChart(activeSymbol);
+  renderVolumeInsights(activeSymbol);
   renderPatterns(activeSymbol);
   renderSR(activeSymbol);
   renderSMC(activeSymbol);
