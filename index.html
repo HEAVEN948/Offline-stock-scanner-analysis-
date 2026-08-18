@@ -193,6 +193,18 @@
     </div>
 
     <div class="panel">
+      <div class="panel-title">Multi-Timeframe Confluence <span style="font-weight:400;color:var(--text2);text-transform:none;letter-spacing:0;font-size:10px">(optional)</span></div>
+      <label class="file-drop" for="htfCsvFile">📁 Tap to select a higher-timeframe CSV for the selected symbol (e.g. Weekly, if your main data is Daily)<br/><span style="opacity:.7">Same Date/OHLCV format · used only to check trend agreement</span></label>
+      <input type="file" id="htfCsvFile" accept=".csv" style="display:none"/>
+      <div id="htfLoadStatus" style="font-size:12px;color:var(--text2);margin-top:8px"></div>
+      <div id="confluenceBox" style="margin-top:10px"></div>
+      <label class="tgl" id="tgl_htfFilter" style="margin-top:10px;display:none">
+        <input type="checkbox" id="htfFilterCheckbox" onchange="toggleHtfFilter(this)"/>
+        Adjust Weighted Score for HTF Alignment
+      </label>
+    </div>
+
+    <div class="panel">
       <div class="price-line">
         <div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);letter-spacing:1px" id="chartSymbolLabel">—</div>
@@ -471,6 +483,9 @@ let overlays = { ema20:true, ema50:true, ema200:false, bb:false, vwap:false, ich
 let indTab = 'rsi';
 let cache = {};
 let timeframeOverride = null;
+let htfDataset = {};
+let htfCache = {};
+let htfAlignmentFilter = false;
 
 // ===================== CSV IMPORT =====================
 document.getElementById('csvFile').addEventListener('change', (e) => {
@@ -488,6 +503,26 @@ document.getElementById('csvFile').addEventListener('change', (e) => {
       },
       error: () => { done++; if (done===files.length) finishImport(); }
     });
+  });
+});
+
+document.getElementById('htfCsvFile').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (!activeSymbol){
+    document.getElementById('htfLoadStatus').textContent = 'Load and select a symbol first, then add its higher-timeframe CSV.';
+    e.target.value = '';
+    return;
+  }
+  const targetSymbol = activeSymbol;
+  Papa.parse(file, {
+    header: true, dynamicTyping: true, skipEmptyLines: true, delimitersToGuess: [',',';','\t','|'],
+    complete: (res) => {
+      importRows(res.data, targetSymbol, htfDataset);
+      finishHTFImport(targetSymbol);
+      e.target.value = '';
+    },
+    error: () => { document.getElementById('htfLoadStatus').textContent = 'Could not parse that CSV — check the column headers.'; }
   });
 });
 
@@ -518,7 +553,8 @@ function parseDateFlexible(v){
   return isNaN(d.getTime()) ? null : d;
 }
 
-function importRows(rows, fallbackSymbol){
+function importRows(rows, fallbackSymbol, store){
+  store = store || dataset;
   if (!rows || !rows.length) return;
   const first = rows[0];
   const keyMap = {};
@@ -549,8 +585,8 @@ function importRows(rows, fallbackSymbol){
       close: close,
       volume: Number(r[keyMap.volume]) || 0
     };
-    if (!dataset[sym]) dataset[sym] = [];
-    dataset[sym].push(candle);
+    if (!store[sym]) store[sym] = [];
+    store[sym].push(candle);
   });
 }
 
@@ -567,6 +603,18 @@ function finishImport(){
     activeSymbol = syms[0];
     showApp();
   }
+}
+
+function finishHTFImport(sym){
+  if (!htfDataset[sym] || !htfDataset[sym].length){
+    document.getElementById('htfLoadStatus').textContent = 'No valid rows found in that CSV — check the Date/Close columns.';
+    return;
+  }
+  const seen = new Map();
+  htfDataset[sym].forEach(c => seen.set(c.date.getTime(), c));
+  htfDataset[sym] = Array.from(seen.values()).sort((a,b)=>a.date-b.date);
+  delete htfCache[sym];
+  draw();
 }
 
 function loadSampleData(){
@@ -597,6 +645,8 @@ function loadSampleData(){
     dataset[sym] = candles;
   });
   cache = {};
+  htfDataset = {};
+  htfCache = {};
   activeSymbol = 'BULLDEMO';
   document.getElementById('loadStatus').textContent = 'Sample data loaded — BULLDEMO (uptrend, should read Buy), BEARDEMO (downtrend, should read Sell), CHOPDEMO (sideways, should read Hold). Synthetic data, for testing only.';
   showApp();
@@ -645,6 +695,11 @@ function setTimeframeOverride(el, val){
   document.querySelectorAll('[data-tf]').forEach(c=>c.classList.remove('active'));
   el.classList.add('active');
   timeframeOverride = val;
+  draw();
+}
+function toggleHtfFilter(input){
+  htfAlignmentFilter = input.checked;
+  document.getElementById('tgl_htfFilter').classList.toggle('on', input.checked);
   draw();
 }
 
@@ -886,6 +941,119 @@ function getComputed(sym){
   const result = {candles, closes, ema20, ema50, ema200, sma20, bbUpper, bbLower, rsi, macd, atr, vwap, obv, cmf, mfi, volMA, ichimoku, periods};
   cache[sym] = result;
   return result;
+}
+
+// Lighter-weight companion to getComputed() for the optional higher-timeframe
+// dataset — only computes what computeHTFBias() needs (EMA/RSI/MACD trend
+// reads), not the full pattern/SMC/volume stack, to keep this feature cheap
+// and isolated from the main analysis engine.
+function getHTFComputed(sym){
+  if (!htfDataset[sym] || !htfDataset[sym].length) return null;
+  if (htfCache[sym]) return htfCache[sym];
+  const candles = htfDataset[sym];
+  const n = candles.length;
+  const periods = getPeriods(n);
+  const closes = candles.map(c=>c.close);
+  const ema20 = computeEMA(closes,periods.ema20);
+  const ema50 = computeEMA(closes,periods.ema50);
+  const ema200 = periods.ema200 ? computeEMA(closes,periods.ema200) : new Array(n).fill(null);
+  const rsi = computeRSI(closes,periods.rsi);
+  const macd = computeMACD(closes, periods.macdFast, periods.macdSlow, periods.macdSignal);
+  const result = {candles, closes, ema20, ema50, ema200, rsi, macd, periods};
+  htfCache[sym] = result;
+  return result;
+}
+
+// ===================== MULTI-TIMEFRAME CONFLUENCE (OPTIONAL) =====================
+// Reads a simple trend/momentum bias off the optional higher-timeframe (HTF)
+// dataset the user can load per-symbol. Kept deliberately lightweight (EMA
+// stack + RSI + MACD histogram) rather than the full weighted engine, since
+// its only job here is a directional read to compare against the main
+// trading-timeframe signal.
+function computeHTFBias(sym){
+  const d = getHTFComputed(sym);
+  if (!d || d.candles.length < 5) return null;
+  const n = d.candles.length;
+  const price = d.candles[n-1].close;
+  const e20=d.ema20[n-1], e50=d.ema50[n-1], e200=d.ema200[n-1];
+  const rsi = d.rsi[n-1];
+  const hist = d.macd.hist[n-1], histPrev = d.macd.hist[n-2];
+
+  let score = 0;
+  const parts = [];
+  if (e20!=null && e50!=null){
+    if (price>e20 && e20>=e50 && (e200==null||e50>=e200)){ score+=2; parts.push('price above the EMA stack (strong uptrend)'); }
+    else if (price>e50){ score+=1; parts.push('price above mid EMA (uptrend)'); }
+    else if (price<e20 && e20<=e50 && (e200==null||e50<=e200)){ score-=2; parts.push('price below the EMA stack (strong downtrend)'); }
+    else if (price<e50){ score-=1; parts.push('price below mid EMA (downtrend)'); }
+    else parts.push('price mixed vs EMAs (range-bound)');
+  } else {
+    parts.push('not enough HTF history for a full EMA read yet');
+  }
+  if (rsi!=null){
+    if (rsi>55){ score+=0.5; parts.push(`RSI ${rsi.toFixed(0)} firm`); }
+    else if (rsi<45){ score-=0.5; parts.push(`RSI ${rsi.toFixed(0)} soft`); }
+  }
+  if (hist!=null){
+    if (hist>0 && (histPrev==null||hist>=histPrev)){ score+=0.5; parts.push('MACD histogram positive/rising'); }
+    else if (hist<0 && (histPrev==null||hist<=histPrev)){ score-=0.5; parts.push('MACD histogram negative/falling'); }
+  }
+
+  let bias, color;
+  if (score>=1.5){ bias='Bullish'; color='var(--green)'; }
+  else if (score<=-1.5){ bias='Bearish'; color='var(--red)'; }
+  else { bias='Neutral'; color='var(--yellow)'; }
+
+  return {
+    bias, color, score,
+    timeframe: detectTimeframe(d.candles),
+    detail: parts.join(', '),
+    candleCount: d.candles.length
+  };
+}
+
+function renderConfluence(sym){
+  const box = document.getElementById('confluenceBox');
+  const tglRow = document.getElementById('tgl_htfFilter');
+  const statusEl = document.getElementById('htfLoadStatus');
+  if (!box || !statusEl) return;
+  if (!sym || !htfDataset[sym] || !htfDataset[sym].length){
+    box.innerHTML = '';
+    tglRow.style.display = 'none';
+    return;
+  }
+  const htfTf = detectTimeframe(htfDataset[sym]);
+  const ltfTf = dataset[sym] ? detectTimeframe(dataset[sym]) : 'Unknown';
+  let statusMsg = `${htfDataset[sym].length} ${htfTf.toLowerCase()} candles loaded for ${sym}.`;
+  if (htfTf === ltfTf) statusMsg += ` ⚠ That looks like the same timeframe as your main data (${ltfTf}) — for a real confluence check, load a higher timeframe (e.g. Weekly for a Daily chart).`;
+  statusEl.textContent = statusMsg;
+
+  const htf = computeHTFBias(sym);
+  if (!htf){
+    box.innerHTML = '<div class="smc-empty">Not enough higher-timeframe candles yet — need at least 5.</div>';
+    tglRow.style.display = 'none';
+    return;
+  }
+  const ltf = computeSignalScore(sym);
+  const ltfDirection = ltf.finalScore>=6 ? 'Bullish' : ltf.finalScore<=4 ? 'Bearish' : 'Neutral';
+
+  let agree, agreeClass, agreeIcon;
+  if (htf.bias==='Neutral' || ltfDirection==='Neutral'){ agree='No Strong Conflict'; agreeClass='neu'; agreeIcon='➖'; }
+  else if (htf.bias===ltfDirection){ agree='Aligned'; agreeClass='bull'; agreeIcon='✅'; }
+  else { agree='Conflicting'; agreeClass='bear'; agreeIcon='⚠️'; }
+
+  box.innerHTML = `
+    <div class="pattern-card ${agreeClass}">
+      <div class="pattern-card-head">
+        <span class="pattern-card-title">${agreeIcon} ${agree}</span>
+        <span class="pattern-card-date">${htf.timeframe} vs Trading TF</span>
+      </div>
+      <div style="font-size:12px;color:var(--text2)">
+        Higher timeframe (${htf.timeframe}, ${htf.candleCount} candles): <strong style="color:${htf.color}">${htf.bias}</strong> — ${htf.detail}.<br/>
+        Trading timeframe reads: <strong>${ltfDirection}</strong> (${ltf.rating}, ${ltf.finalScore.toFixed(1)}/10).
+      </div>
+    </div>`;
+  tglRow.style.display = 'flex';
 }
 
 // ===================== VOLUME ANALYSIS (SPIKES, DRY-UPS, CLIMAX, OBV DIVERGENCE) =====================
@@ -2109,16 +2277,49 @@ function renderSR(sym){
 
 function renderScore(sym){
   const s = computeSignalScore(sym);
+
+  // Optional HTF alignment adjustment — display-layer only, does not touch
+  // the underlying computeSignalScore() output used elsewhere (patterns,
+  // analysis, backtest). Only kicks in if the user has loaded HTF data for
+  // this symbol AND turned the toggle on.
+  let displayScore = s.finalScore;
+  let displayRating = s.rating;
+  let displayIcon = s.ratingIcon;
+  let htfNote = '';
+  if (htfAlignmentFilter && htfDataset[sym] && htfDataset[sym].length){
+    const htf = computeHTFBias(sym);
+    if (htf){
+      const ltfDirection = s.finalScore>=6 ? 'Bullish' : s.finalScore<=4 ? 'Bearish' : 'Neutral';
+      if (htf.bias!=='Neutral' && ltfDirection!=='Neutral'){
+        if (htf.bias===ltfDirection){
+          displayScore = Math.min(10, s.finalScore + 0.5);
+          htfNote = `<div style="font-size:11px;color:var(--green);margin-top:8px">✅ +0.5 — ${htf.timeframe} timeframe agrees (${htf.bias}).</div>`;
+        } else {
+          displayScore = Math.max(0, s.finalScore - 1.5);
+          htfNote = `<div style="font-size:11px;color:var(--red);margin-top:8px">⚠️ −1.5 — ${htf.timeframe} timeframe conflicts (${htf.bias}). Trade with extra caution or wait for alignment.</div>`;
+        }
+        if (displayScore>=9){ displayRating='Strong Buy'; displayIcon='🟢🟢🟢'; }
+        else if (displayScore>=7){ displayRating='Buy'; displayIcon='🟢'; }
+        else if (displayScore>=5){ displayRating='Hold'; displayIcon='🟡'; }
+        else if (displayScore>=3){ displayRating='Weak Sell'; displayIcon='🟠'; }
+        else { displayRating='Strong Sell'; displayIcon='🔴'; }
+      } else {
+        htfNote = `<div style="font-size:11px;color:var(--text2);margin-top:8px">➖ No adjustment — HTF or trading-timeframe read is Neutral.</div>`;
+      }
+    }
+  }
+
   const box = document.getElementById('scoreBox');
-  const pct = (s.finalScore/10)*100;
-  const color = s.finalScore>=9?'#00e676':s.finalScore>=7?'#8bd450':s.finalScore>=5?'#ffca28':s.finalScore>=3?'#ff8a00':'#ff3d57';
+  const pct = (displayScore/10)*100;
+  const color = displayScore>=9?'#00e676':displayScore>=7?'#8bd450':displayScore>=5?'#ffca28':displayScore>=3?'#ff8a00':'#ff3d57';
   box.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div class="rating-badge" style="color:${color}">${s.ratingIcon} ${s.rating}</div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:${color}">${s.finalScore.toFixed(1)} / 10</div>
+      <div class="rating-badge" style="color:${color}">${displayIcon} ${displayRating}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:${color}">${displayScore.toFixed(1)} / 10</div>
     </div>
     <div class="score-scale"><span>0 Strong Sell</span><span>5 Hold</span><span>10 Strong Buy</span></div>
     <div class="score-meter"><div class="score-marker" style="left:calc(${pct}% - 1.5px)"></div></div>
+    ${htfNote}
     <table style="width:100%;margin-top:14px">
       <thead><tr><th>Indicator</th><th>Detail</th><th style="text-align:right">Score</th></tr></thead>
       <tbody>
@@ -2217,6 +2418,7 @@ function draw(){
   document.getElementById('p_mfi').textContent = periods.mfi;
 
   renderDataStatus(activeSymbol);
+  renderConfluence(activeSymbol);
   drawMainChart(activeSymbol);
   drawIndicatorChart(activeSymbol);
   renderVolumeInsights(activeSymbol);
